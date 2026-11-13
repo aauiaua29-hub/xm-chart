@@ -37,6 +37,7 @@
   #legend .sym{font-weight:700;font-size:13px}
   #legend .up{color:var(--up)} #legend .down{color:var(--down)}
   #legend .ind span{margin-right:10px}
+  #legend .quote{color:#c9ced6} #legend .quote b{color:#f5b041;font-weight:600}
   #msg{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:4;max-width:90%;
     background:rgba(22,26,34,.95);border:1px solid var(--line);border-radius:8px;padding:14px 16px;text-align:center;line-height:1.6}
   .hidden{display:none!important}
@@ -243,7 +244,7 @@ const state = {
   db:'', demo:false, src:null, symbols:[], sym:null,
   tf: store.get('tf','M15'), tz: store.get('tz','jst'),
   bars:[], digits:3, serverOffset:7200, lastBeat:0, conn:true,
-  stopLive:null, loadSeq:0, statusTimer:null, indLines:[], markersKey:'', paneCount:1, symbolsRev:null,
+  stopLive:null, loadSeq:0, statusTimer:null, indLines:[], markersKey:'', paneCount:1, symbolsRev:null, quote:null, askLine:null,
 };
 const indState = {};
 (function initIndState(){
@@ -284,7 +285,8 @@ const Firebase = {
       const path = msg.path || '/', data = msg.data;
       if (path === '/') cur = isPatch ? Object.assign(cur || {}, data) : data;
       else { cur = cur || {}; cur[path.replace(/^\//,'')] = data; }
-      if (cur && cur.t) onBar({t:+cur.t, o:+cur.o, h:+cur.h, l:+cur.l, c:+cur.c, v:+(cur.v||0)});
+      if (cur && cur.t) onBar({t:+cur.t, o:+cur.o, h:+cur.h, l:+cur.l, c:+cur.c, v:+(cur.v||0)},
+                              cur.a != null ? {b:+cur.b, a:+cur.a, sp:+cur.sp} : null);
     };
     es.addEventListener('put',   e=>apply(e,false));
     es.addEventListener('patch', e=>apply(e,true));
@@ -330,7 +332,9 @@ const Demo = {
       if (t > b.t) b = {t, o:b.c, h:b.c, l:b.c, c:b.c, v:0};
       const c = b.c + (r()-0.5)*s.vol*1.5;
       b = {...b, c, h:Math.max(b.h,c), l:Math.min(b.l,c), v:b.v+1};
-      this.last[key+tf] = b; onBar({...b});
+      this.last[key+tf] = b;
+      const sp = Math.round((s.digits === 3 || s.digits === 5 ? 12 : 25) + r()*6);
+      onBar({...b}, {b:c, a:c + sp*Math.pow(10,-s.digits), sp});
     }, 700);
     return ()=>clearInterval(id);
   },
@@ -438,6 +442,24 @@ function scheduleRender(full){
   requestAnimationFrame(()=>{ rafPending = false; const f = rafFull; rafFull = false; render(f); });
 }
 
+/* ---------- Bid / Ask / スプレッド ---------- */
+// FX（小数3桁・5桁）はpips、それ以外（GOLD・指数など）はポイントで表示
+function fmtSpread(sp){
+  if (sp == null || !isFinite(sp)) return '-';
+  return state.digits === 3 || state.digits === 5 ? (sp/10).toFixed(1) + ' pips' : sp + ' pt';
+}
+function setQuote(q){
+  state.quote = q;
+  if (!q){
+    if (state.askLine){ candle.removePriceLine(state.askLine); state.askLine = null; }
+    return;
+  }
+  if (!state.askLine)
+    state.askLine = candle.createPriceLine({price:q.a, color:'#8a93a3', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Ask'});
+  else state.askLine.applyOptions({price:q.a});
+  if (!rafPending) updateLegend(null);
+}
+
 /* ---------- 凡例（OHLCと指標の値） ---------- */
 function fmt(v, p){ return v == null || !isFinite(v) ? '-' : (+v).toFixed(p); }
 function updateLegend(idx){
@@ -446,6 +468,8 @@ function updateLegend(idx){
   const b = bars[idx], d = state.digits, cls = b.c >= b.o ? 'up' : 'down';
   let html = `<div><span class="sym">${state.sym.name}</span> · ${state.tf}</div>` +
     `<div class="${cls}">始 ${fmt(b.o,d)}　高 ${fmt(b.h,d)}　安 ${fmt(b.l,d)}　終 ${fmt(b.c,d)}</div>`;
+  const q = state.quote;
+  if (q) html += `<div class="quote">Bid ${fmt(q.b,d)}　Ask ${fmt(q.a,d)}　スプレッド <b>${fmtSpread(q.sp)}</b></div>`;
   if (state.indLines.length)
     html += '<div class="ind">' + state.indLines.map(l=>`<span style="color:${l.color}">${l.name} ${fmt(l.values[idx], l.prec)}</span>`).join('') + '</div>';
   $('legend').innerHTML = html;
@@ -507,6 +531,7 @@ async function load(){
   if (state.stopLive){ state.stopLive(); state.stopLive = null; }
   if (!state.sym) return;
   showMsg('読み込み中…');
+  setQuote(null);
   let bars;
   try{ bars = await state.src.history(state.sym.key, state.tf, MAX_BARS); }
   catch(e){ if (seq === state.loadSeq) showMsg('データを読み込めませんでした<br><span class="note">' + e.message + '</span>'); return; }
@@ -521,7 +546,8 @@ async function load(){
   state.stopLive = state.src.live(state.sym.key, state.tf, onLive, ()=>reloadRecent(50));
 }
 
-function onLive(b){
+function onLive(b, q){
+  if (q) setQuote(q);
   const bars = state.bars;
   if (!bars.length){ bars.push(b); scheduleRender(true); return; }
   const last = bars[bars.length-1];
