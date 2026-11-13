@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>XMチャート</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a22; --line:#262b36; --text:#d5dae3; --muted:#8a93a3;
+    --accent:#3b82f6; --up:#26a69a; --down:#ef5350; --warn:#f5b041;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Segoe UI",sans-serif;font-size:14px;
+    -webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+  body{display:flex;flex-direction:column;height:100vh;height:100dvh;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;background:var(--panel);border-bottom:1px solid var(--line)}
+  select,button,input{font:inherit;color:var(--text);background:#1f2430;border:1px solid var(--line);border-radius:6px}
+  select{padding:6px 8px;font-weight:600}
+  button{padding:6px 10px;cursor:pointer;white-space:nowrap}
+  button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  #status{flex:1;display:flex;align-items:center;gap:6px;min-width:0;color:var(--muted);font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  #dot{width:8px;height:8px;border-radius:50%;background:#555;flex:none}
+  #tfs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;order:10;flex-basis:100%}
+  #tfs::-webkit-scrollbar{display:none}
+  #tfs button{padding:5px 10px;font-size:13px}
+  @media (min-width:900px){ #tfs{order:0;flex-basis:auto} #status{order:5} #tz,#indBtn,#cfgBtn{order:6} }
+  main{position:relative;flex:1;min-height:0}
+  #chart{position:absolute;inset:0}
+  #legend{position:absolute;left:8px;top:6px;z-index:3;max-width:calc(100% - 90px);pointer-events:none;font-size:12px;line-height:1.5;
+    text-shadow:0 0 3px var(--bg),0 0 3px var(--bg)}
+  @media (max-width:600px){ #legend{font-size:11px} }
+  #legend .sym{font-weight:700;font-size:13px}
+  #legend .up{color:var(--up)} #legend .down{color:var(--down)}
+  #legend .ind span{margin-right:10px}
+  #msg{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:4;max-width:90%;
+    background:rgba(22,26,34,.95);border:1px solid var(--line);border-radius:8px;padding:14px 16px;text-align:center;line-height:1.6}
+  .hidden{display:none!important}
+  .modal{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center}
+  .sheet{background:var(--panel);width:100%;max-width:520px;max-height:80vh;overflow:auto;border-radius:14px 14px 0 0;
+    padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
+  @media (min-width:700px){ .modal{align-items:center} .sheet{border-radius:12px} }
+  .sheet h2{margin:0 0 12px;font-size:16px}
+  .ind-item{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px}
+  .ind-item label.head{display:flex;align-items:center;gap:8px;font-weight:600}
+  .ind-item input[type=checkbox]{width:18px;height:18px}
+  .params{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .params label{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted)}
+  .params input,.params select{width:80px;padding:4px 6px}
+  .row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+  #cfgUrl{width:100%;padding:8px}
+  .note{color:var(--muted);font-size:12px;line-height:1.6}
+</style>
+</head>
+<body>
+<header>
+  <select id="sym" aria-label="銘柄"></select>
+  <div id="tfs"></div>
+  <div id="status"><span id="dot"></span><span id="statusText">接続中…</span></div>
+  <button id="tz" title="時刻表示の切り替え">日本時間</button>
+  <button id="indBtn">指標</button>
+  <button id="cfgBtn" aria-label="設定">⚙</button>
+</header>
+<main>
+  <div id="chart"></div>
+  <div id="legend"></div>
+  <div id="msg" class="hidden"></div>
+</main>
+
+<div id="indModal" class="modal hidden">
+  <div class="sheet">
+    <h2>インジケーター</h2>
+    <div id="indList"></div>
+    <div class="row"><button id="indClose">閉じる</button></div>
+  </div>
+</div>
+
+<div id="cfgModal" class="modal hidden">
+  <div class="sheet">
+    <h2>接続設定</h2>
+    <p class="note">FirebaseのデータベースURLを入力してください（例：https://xxxx-default-rtdb.asia-southeast1.firebasedatabase.app）。<br>
+      この端末のブラウザに保存されます。「demo」と入力するとデモデータで表示します。</p>
+    <input id="cfgUrl" type="url" placeholder="https://…firebasedatabase.app" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="row">
+      <button id="cfgDemo">デモで表示</button>
+      <button id="cfgCancel">閉じる</button>
+      <button id="cfgSave" class="on">保存して接続</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/lightweight-charts@5.3.0/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+'use strict';
+
+/* =====================================================================
+ *  基本設定
+ * ===================================================================== */
+// FirebaseのデータベースURLをここに書いておくと、どの端末でも入力不要で開けます。
+// 空のままなら、画面の⚙から端末ごとに入力します。
+const DEFAULT_DB_URL = 'https://xm-chart-default-rtdb.asia-southeast1.firebasedatabase.app';
+
+const MAX_BARS   = 1000;   // 読み込む本数（EAの保存本数以下）
+const TIMEFRAMES = ['M1','M5','M15','M30','H1','H4','D1'];
+const TF_SEC     = {M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400};
+const JST        = 9 * 3600;
+
+/* =====================================================================
+ *  計算用の関数（Pine Script の ta.* に相当）
+ *  src は数値の配列、戻り値は同じ長さの配列（計算できない所は null）
+ * ===================================================================== */
+const TA = {
+  sma(src, n){
+    const out = new Array(src.length).fill(null); let sum = 0, cnt = 0;
+    for (let i = 0; i < src.length; i++){
+      if (src[i] == null){ sum = 0; cnt = 0; continue; }
+      sum += src[i]; cnt++;
+      if (cnt > n){ sum -= src[i-n]; cnt = n; }
+      if (cnt === n) out[i] = sum / n;
+    }
+    return out;
+  },
+  // Pineの ta.ema と同じ（最初の値はSMA）
+  ema(src, n){ return TA._smooth(src, n, 2/(n+1)); },
+  // Pineの ta.rma（RSIなどで使うワイルダー平滑）
+  rma(src, n){ return TA._smooth(src, n, 1/n); },
+  _smooth(src, n, alpha){
+    const out = new Array(src.length).fill(null); let prev = null, buf = [];
+    for (let i = 0; i < src.length; i++){
+      const v = src[i]; if (v == null) continue;
+      if (prev === null){
+        buf.push(v);
+        if (buf.length === n){ prev = buf.reduce((a,b)=>a+b,0)/n; out[i] = prev; }
+      } else { prev = alpha*v + (1-alpha)*prev; out[i] = prev; }
+    }
+    return out;
+  },
+  // Pineの ta.stdev と同じ（母標準偏差）
+  stdev(src, n){
+    const mean = TA.sma(src, n), out = new Array(src.length).fill(null);
+    for (let i = n-1; i < src.length; i++){
+      if (mean[i] == null) continue; let s = 0;
+      for (let j = i-n+1; j <= i; j++) s += (src[j]-mean[i])**2;
+      out[i] = Math.sqrt(s/n);
+    }
+    return out;
+  },
+  change(src){ return src.map((v,i)=> i===0||v==null||src[i-1]==null ? null : v - src[i-1]); },
+  rsi(src, n){
+    const ch = TA.change(src);
+    const up = TA.rma(ch.map(v=> v==null?null:Math.max(v,0)), n);
+    const dn = TA.rma(ch.map(v=> v==null?null:-Math.min(v,0)), n);
+    return up.map((u,i)=> u==null||dn[i]==null ? null : dn[i]===0 ? 100 : u===0 ? 0 : 100 - 100/(1+u/dn[i]));
+  },
+  highest(src, n){ return src.map((_,i)=> i<n-1 ? null : Math.max(...src.slice(i-n+1,i+1))); },
+  lowest (src, n){ return src.map((_,i)=> i<n-1 ? null : Math.min(...src.slice(i-n+1,i+1))); },
+  crossover (a, b, i){ return i>0 && a[i]!=null && b[i]!=null && a[i-1]!=null && b[i-1]!=null && a[i] > b[i] && a[i-1] <= b[i-1]; },
+  crossunder(a, b, i){ return i>0 && a[i]!=null && b[i]!=null && a[i-1]!=null && b[i-1]!=null && a[i] < b[i] && a[i-1] >= b[i-1]; },
+};
+
+/* =====================================================================
+ *  インジケーター定義
+ *  ---------------------------------------------------------------------
+ *  bars は古い順の配列：{ t, o, h, l, c, v }（Pineの time/open/high/low/close/volume）
+ *  compute(bars, p, TA) が返すもの：
+ *    lines   : [{ key, name, color, values:[…], width?:1-4, style?:0-4, precision? }]  … Pineの plot()
+ *    markers : [{ index, position:'aboveBar'|'belowBar', shape:'arrowUp'|'arrowDown'|'circle'|'square', color, text }] … plotshape()
+ *  pane    : 'main' = ローソク足に重ねる / 'sub' = 下段に表示
+ *  levels  : 下段に引く水平線（例：RSIの30/70）… hline()
+ *  repaint : 過去の値も変わる指標（ジグザグ等）は true にすると毎回全体を描き直します
+ *
+ *  ★ 自作インジケーター（Pine Script）を移植したら、この配列に追加します。
+ * ===================================================================== */
+const INDICATORS = [
+  {
+    id:'ma', name:'移動平均線', pane:'main', defaultOn:true,
+    params:[
+      {key:'type', label:'種類', value:'SMA', options:['SMA','EMA']},
+      {key:'p1',   label:'短期', value:20},
+      {key:'p2',   label:'中期', value:75},
+      {key:'p3',   label:'長期', value:200},
+    ],
+    compute(bars, p, TA){
+      const c = bars.map(b=>b.c), f = p.type === 'EMA' ? TA.ema : TA.sma;
+      return { lines:[
+        {key:'1', name:`${p.type}${p.p1}`, color:'#f5b041', values:f(c, +p.p1)},
+        {key:'2', name:`${p.type}${p.p2}`, color:'#5dade2', values:f(c, +p.p2)},
+        {key:'3', name:`${p.type}${p.p3}`, color:'#bb8fce', values:f(c, +p.p3)},
+      ]};
+    }
+  },
+  {
+    id:'bb', name:'ボリンジャーバンド', pane:'main', defaultOn:false,
+    params:[ {key:'n', label:'期間', value:20}, {key:'k', label:'σ', value:2} ],
+    compute(bars, p, TA){
+      const c = bars.map(b=>b.c), mid = TA.sma(c, +p.n), sd = TA.stdev(c, +p.n);
+      return { lines:[
+        {key:'m', name:`BB${p.n}`, color:'#7f8c8d', values:mid, width:1},
+        {key:'u', name:`+${p.k}σ`, color:'#48c9b0', values:mid.map((m,i)=>m==null?null:m + p.k*sd[i]), width:1},
+        {key:'d', name:`-${p.k}σ`, color:'#48c9b0', values:mid.map((m,i)=>m==null?null:m - p.k*sd[i]), width:1},
+      ]};
+    }
+  },
+  {
+    id:'rsi', name:'RSI', pane:'sub', defaultOn:false, levels:[30,70],
+    params:[ {key:'n', label:'期間', value:14} ],
+    compute(bars, p, TA){
+      return { lines:[ {key:'r', name:`RSI${p.n}`, color:'#af7ac5', values:TA.rsi(bars.map(b=>b.c), +p.n), precision:2} ]};
+    }
+  },
+
+  // ↓↓↓ ここに自作インジケーターを追加 ↓↓↓
+  // {
+  //   id:'my1', name:'自作インジケーター', pane:'main', defaultOn:true,
+  //   params:[ {key:'len', label:'期間', value:14} ],
+  //   compute(bars, p, TA){
+  //     const close = bars.map(b=>b.c);
+  //     const line  = TA.ema(close, +p.len);
+  //     const markers = [];
+  //     for (let i = 1; i < bars.length; i++){
+  //       if (TA.crossover(close, line, i))  markers.push({index:i, position:'belowBar', shape:'arrowUp',   color:'#26a69a', text:'買'});
+  //       if (TA.crossunder(close, line, i)) markers.push({index:i, position:'aboveBar', shape:'arrowDown', color:'#ef5350', text:'売'});
+  //     }
+  //     return { lines:[{key:'l', name:'EMA', color:'#fff', values:line}], markers };
+  //   }
+  // },
+];
+
+/* =====================================================================
+ *  以下はアプリ本体（通常は編集不要）
+ * ===================================================================== */
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem('xmchart.'+k); return v == null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem('xmchart.'+k, JSON.stringify(v)); }catch(e){} },
+};
+
+const state = {
+  db:'', demo:false, src:null, symbols:[], sym:null,
+  tf: store.get('tf','M15'), tz: store.get('tz','jst'),
+  bars:[], digits:3, serverOffset:7200, lastBeat:0, conn:true,
+  stopLive:null, loadSeq:0, statusTimer:null, indLines:[], markersKey:'', paneCount:1, symbolsRev:null,
+};
+const indState = {};
+(function initIndState(){
+  const saved = store.get('ind', {});
+  for (const ind of INDICATORS){
+    const p = {}; for (const pr of ind.params) p[pr.key] = pr.value;
+    const s = saved[ind.id] || {};
+    indState[ind.id] = { on: s.on ?? !!ind.defaultOn, p: Object.assign(p, s.p || {}) };
+  }
+})();
+
+/* ---------- データの取得元：Firebase ---------- */
+const Firebase = {
+  url(path, q){ return state.db.replace(/\/+$/,'') + path + '.json' + (q ? '?' + q : ''); },
+  async get(path, q){
+    const r = await fetch(this.url(path, q), {cache:'no-store'});
+    if (r.status === 401) throw new Error('読み取りが許可されていません（データベースのルールを確認）');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  },
+  async symbols(){
+    const m = await this.get('/meta') || {};
+    return Object.entries(m).map(([key,v])=>({key, name:v.name||key, digits:v.digits ?? 5, order:v.order ?? 99}))
+      .sort((a,b)=>a.order-b.order);
+  },
+  async status(){ return await this.get('/status') || {}; },
+  async history(key, tf, n){
+    const obj = await this.get(`/bars/${key}/${tf}`, 'orderBy=' + encodeURIComponent('"$key"') + '&limitToLast=' + n) || {};
+    return Object.keys(obj).map(k=>{ const a = obj[k]; return {t:+k, o:+a[0], h:+a[1], l:+a[2], c:+a[3], v:+(a[4]||0)}; })
+      .filter(b=>isFinite(b.t) && isFinite(b.c)).sort((a,b)=>a.t-b.t);
+  },
+  live(key, tf, onBar, onReconnect){
+    const es = new EventSource(this.url(`/live/${key}/${tf}`));
+    let cur = null, hadError = false;
+    const apply = (ev, isPatch) => {
+      let msg; try{ msg = JSON.parse(ev.data); }catch(e){ return; }
+      if (!msg) return;
+      const path = msg.path || '/', data = msg.data;
+      if (path === '/') cur = isPatch ? Object.assign(cur || {}, data) : data;
+      else { cur = cur || {}; cur[path.replace(/^\//,'')] = data; }
+      if (cur && cur.t) onBar({t:+cur.t, o:+cur.o, h:+cur.h, l:+cur.l, c:+cur.c, v:+(cur.v||0)});
+    };
+    es.addEventListener('put',   e=>apply(e,false));
+    es.addEventListener('patch', e=>apply(e,true));
+    es.addEventListener('cancel', ()=>showMsg('リアルタイム更新が拒否されました（データベースのルールを確認）'));
+    es.onerror = ()=>{ hadError = true; setConn(false); };
+    es.onopen  = ()=>{ setConn(true); if (hadError){ hadError = false; onReconnect(); } };
+    return ()=>es.close();
+  },
+};
+
+/* ---------- データの取得元：デモ（ランダムな値動き） ---------- */
+const Demo = {
+  syms:[
+    {key:'USDJPY', name:'USDJPY', digits:3, base:154.20, vol:0.020},
+    {key:'EURUSD', name:'EURUSD', digits:5, base:1.0845, vol:0.00012},
+    {key:'GBPJPY', name:'GBPJPY', digits:3, base:196.50, vol:0.030},
+    {key:'GOLD',   name:'GOLD',   digits:2, base:2650.0, vol:0.90},
+  ],
+  offset:7200, last:{},
+  rng(seed){ return ()=>{ seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed>>>15, 1|seed);
+    t = t + Math.imul(t ^ t>>>7, 61|t) ^ t; return ((t ^ t>>>14)>>>0)/4294967296; }; },
+  async symbols(){ return this.syms; },
+  async status(){ return {updated: Math.floor(Date.now()/1000), serverOffset: this.offset}; },
+  async history(key, tf, n){
+    const s = this.syms.find(x=>x.key===key), sec = TF_SEC[tf], r = this.rng([...key+tf].reduce((a,c)=>a*31+c.charCodeAt(0),7));
+    const now = Math.floor(Date.now()/1000) + this.offset, start = Math.floor(now/sec)*sec - (n-1)*sec;
+    const step = s.vol * Math.sqrt(sec/60), bars = []; let p = s.base;
+    for (let i = 0; i < n; i++){
+      const o = p, drift = (r()-0.5)*step*2 + Math.sin(i/40)*step*0.15;
+      const c = o + drift, h = Math.max(o,c) + r()*step*0.6, l = Math.min(o,c) - r()*step*0.6;
+      bars.push({t:start+i*sec, o, h, l, c, v:Math.floor(r()*500)}); p = c;
+    }
+    const adj = s.base - bars[bars.length-1].c;
+    for (const b of bars){ b.o+=adj; b.h+=adj; b.l+=adj; b.c+=adj; }
+    this.last[key+tf] = {...bars[bars.length-1]};
+    return bars;
+  },
+  live(key, tf, onBar){
+    const s = this.syms.find(x=>x.key===key), sec = TF_SEC[tf], r = this.rng(Date.now() & 0xffff);
+    const id = setInterval(()=>{
+      let b = this.last[key+tf]; if (!b) return;
+      const now = Math.floor(Date.now()/1000) + this.offset, t = Math.floor(now/sec)*sec;
+      if (t > b.t) b = {t, o:b.c, h:b.c, l:b.c, c:b.c, v:0};
+      const c = b.c + (r()-0.5)*s.vol*1.5;
+      b = {...b, c, h:Math.max(b.h,c), l:Math.min(b.l,c), v:b.v+1};
+      this.last[key+tf] = b; onBar({...b});
+    }, 700);
+    return ()=>clearInterval(id);
+  },
+};
+
+/* ---------- チャート ---------- */
+const LC = LightweightCharts;
+const chart = LC.createChart($('chart'), {
+  autoSize:true,
+  layout:{ background:{type:'solid', color:'#0f1115'}, textColor:'#aab2c0', fontSize:11,
+    panes:{ separatorColor:'#262b36', separatorHoverColor:'rgba(59,130,246,.25)', enableResize:true } },
+  grid:{ vertLines:{color:'#1a1e27'}, horzLines:{color:'#1a1e27'} },
+  rightPriceScale:{ borderColor:'#262b36', scaleMargins:{top:0.06, bottom:0.06} },
+  timeScale:{ borderColor:'#262b36', timeVisible:true, secondsVisible:false, rightOffset:6 },
+  crosshair:{ mode: LC.CrosshairMode.Normal },
+  localization:{ locale:'ja-JP', dateFormat:'yyyy/MM/dd' },
+});
+const candle = chart.addSeries(LC.CandlestickSeries, {
+  upColor:'#26a69a', downColor:'#ef5350', borderVisible:false, wickUpColor:'#26a69a', wickDownColor:'#ef5350',
+});
+const markerApi = LC.createSeriesMarkers(candle, []);
+const indSeries = {};   // 'id:key' → series
+
+// サーバー時間 → 表示時刻（日足は日付がずれないようサーバー時間のまま）
+function disp(t){ return state.tz === 'jst' && TF_SEC[state.tf] < 86400 ? t - state.serverOffset + JST : t; }
+function toCandle(b){ return {time:disp(b.t), open:b.o, high:b.h, low:b.l, close:b.c}; }
+
+function priceFormat(prec){ return {type:'price', precision:prec, minMove:Math.pow(10,-prec)}; }
+
+function render(full){
+  const bars = state.bars;
+  if (!bars.length){
+    candle.setData([]); markerApi.setMarkers([]); state.markersKey = ''; state.indLines = [];
+    for (const k of Object.keys(indSeries)){ chart.removeSeries(indSeries[k]); delete indSeries[k]; }
+    updateLegend(null); return;
+  }
+  if (full){
+    const range = chart.timeScale().getVisibleLogicalRange();
+    candle.setData(bars.map(toCandle));
+    if (range && !render.fresh) chart.timeScale().setVisibleLogicalRange(range);
+  } else {
+    candle.update(toCandle(bars[bars.length-1]));
+  }
+  renderIndicators(full);
+  updateLegend(null);
+}
+
+function renderIndicators(full){
+  const bars = state.bars, n = bars.length, used = new Set(), markers = [];
+  state.indLines = [];
+  for (const ind of INDICATORS){
+    const st = indState[ind.id]; if (!st.on) continue;
+    let res; try{ res = ind.compute(bars, st.p, TA) || {}; }catch(e){ console.error(ind.name, e); continue; }
+    for (const ln of res.lines || []){
+      const k = ind.id + ':' + ln.key; used.add(k);
+      let s = indSeries[k], created = false;
+      if (!s){
+        // 下段の指標は、指標ごとに専用の段（ペイン）を作る
+        let pane = 0, firstInPane = false;
+        if (ind.pane === 'sub'){
+          const sib = Object.keys(indSeries).find(x=>x.startsWith(ind.id + ':'));
+          if (sib) pane = indSeries[sib].getPane().paneIndex();
+          else { pane = chart.panes().length; firstInPane = true; }
+        }
+        s = chart.addSeries(LC.LineSeries, {
+          color:ln.color, lineWidth:ln.width || 2, lineStyle:ln.style || 0,
+          priceFormat: priceFormat(ln.precision ?? state.digits),
+          lastValueVisible: ind.pane === 'sub', priceLineVisible:false, crosshairMarkerVisible:false,
+        }, pane);
+        if (firstInPane)
+          for (const lv of ind.levels || []) s.createPriceLine({price:lv, color:'#4a5160', lineWidth:1, lineStyle:2, axisLabelVisible:false});
+        indSeries[k] = s; created = true;
+      }
+      const vals = ln.values;
+      if (full || created || ind.repaint){
+        const data = [];
+        for (let i = 0; i < n; i++) data.push(vals[i] == null || !isFinite(vals[i]) ? {time:disp(bars[i].t)} : {time:disp(bars[i].t), value:vals[i]});
+        s.setData(data);
+      } else if (vals[n-1] != null && isFinite(vals[n-1])){
+        s.update({time:disp(bars[n-1].t), value:vals[n-1]});
+      }
+      state.indLines.push({name:ln.name, color:ln.color, values:vals, prec:ln.precision ?? state.digits});
+    }
+    for (const m of res.markers || []){
+      if (m.index < 0 || m.index >= n) continue;
+      markers.push({time:disp(bars[m.index].t), position:m.position || 'aboveBar', shape:m.shape || 'circle', color:m.color || '#fff', text:m.text || ''});
+    }
+  }
+  for (const k of Object.keys(indSeries)) if (!used.has(k)){ chart.removeSeries(indSeries[k]); delete indSeries[k]; }
+  markers.sort((a,b)=>a.time-b.time);
+  const mk = JSON.stringify(markers);
+  if (full || mk !== state.markersKey){ markerApi.setMarkers(markers); state.markersKey = mk; }
+  // 段の高さ：ローソク足を大きく、下段は小さく
+  const panes = chart.panes();
+  if (panes.length !== state.paneCount){
+    state.paneCount = panes.length;
+    panes.forEach((p,i)=>p.setStretchFactor(i === 0 ? 3 : 1));
+  }
+}
+
+let rafPending = false, rafFull = false;
+function scheduleRender(full){
+  rafFull = rafFull || full;
+  if (rafPending) return; rafPending = true;
+  requestAnimationFrame(()=>{ rafPending = false; const f = rafFull; rafFull = false; render(f); });
+}
+
+/* ---------- 凡例（OHLCと指標の値） ---------- */
+function fmt(v, p){ return v == null || !isFinite(v) ? '-' : (+v).toFixed(p); }
+function updateLegend(idx){
+  const bars = state.bars; if (!bars.length || !state.sym){ $('legend').innerHTML = ''; return; }
+  if (idx == null || idx < 0 || idx >= bars.length) idx = bars.length - 1;
+  const b = bars[idx], d = state.digits, cls = b.c >= b.o ? 'up' : 'down';
+  let html = `<div><span class="sym">${state.sym.name}</span> · ${state.tf}</div>` +
+    `<div class="${cls}">始 ${fmt(b.o,d)}　高 ${fmt(b.h,d)}　安 ${fmt(b.l,d)}　終 ${fmt(b.c,d)}</div>`;
+  if (state.indLines.length)
+    html += '<div class="ind">' + state.indLines.map(l=>`<span style="color:${l.color}">${l.name} ${fmt(l.values[idx], l.prec)}</span>`).join('') + '</div>';
+  $('legend').innerHTML = html;
+}
+chart.subscribeCrosshairMove(p=>{
+  updateLegend(p && p.logical != null && p.time != null ? Math.round(p.logical) : null);
+});
+
+/* ---------- 状態表示 ---------- */
+function showMsg(t){ const m = $('msg'); if (!t){ m.classList.add('hidden'); return; } m.innerHTML = t; m.classList.remove('hidden'); }
+function setConn(ok){ state.conn = ok; paintStatus(); }
+function paintStatus(){
+  let color = '#26a69a', text = '';
+  if (state.demo){ color = '#8a93a3'; text = 'デモ表示中'; }
+  else if (!state.conn){ color = '#ef5350'; text = '接続が切れています（再接続中）'; }
+  else if (!state.lastBeat){ color = '#8a93a3'; text = 'EAからのデータ待ち'; }
+  else {
+    const age = Math.max(0, Math.floor(Date.now()/1000) - state.lastBeat);
+    if (age < 60) text = 'EA稼働中';
+    else { color = '#f5b041'; text = `EAの更新が ${age < 3600 ? Math.floor(age/60)+'分' : Math.floor(age/3600)+'時間'}止まっています`; }
+  }
+  $('dot').style.background = color; $('statusText').textContent = text;
+}
+async function refreshStatus(){
+  try{
+    const s = await state.src.status();
+    if (s.updated) state.lastBeat = +s.updated;
+    // MT5の気配値表示が変わったら銘柄リストを読み直す
+    if (s.symbolsRev != null && +s.symbolsRev !== state.symbolsRev){
+      const first = state.symbolsRev == null; state.symbolsRev = +s.symbolsRev;
+      if (!first) reloadSymbols();
+    }
+    if (s.serverOffset != null && +s.serverOffset !== state.serverOffset){
+      state.serverOffset = +s.serverOffset; if (state.tz === 'jst') scheduleRender(true);
+    }
+    if (!state.demo) setConn(true);
+  }catch(e){ if (!state.demo) setConn(false); }
+  paintStatus();
+}
+
+/* ---------- 銘柄リスト ---------- */
+function fillSymbolSelect(){
+  $('sym').innerHTML = state.symbols.map(s=>`<option value="${s.key}">${s.name}</option>`).join('');
+  if (state.sym) $('sym').value = state.sym.key;
+}
+async function reloadSymbols(){
+  let syms; try{ syms = await state.src.symbols(); }catch(e){ return; }
+  state.symbols = syms;
+  const cur = state.sym && syms.find(s=>s.key === state.sym.key);
+  if (cur){ state.sym = cur; fillSymbolSelect(); return; }
+  // 表示中の銘柄が気配値表示から外れた
+  state.sym = syms[0] || null; fillSymbolSelect();
+  if (state.sym) load(); else { state.bars = []; render(true); showMsg('銘柄がありません<br><span class="note">MT5の気配値表示に銘柄を表示してください</span>'); }
+}
+
+/* ---------- 読み込み ---------- */
+async function load(){
+  const seq = ++state.loadSeq;
+  if (state.stopLive){ state.stopLive(); state.stopLive = null; }
+  if (!state.sym) return;
+  showMsg('読み込み中…');
+  let bars;
+  try{ bars = await state.src.history(state.sym.key, state.tf, MAX_BARS); }
+  catch(e){ if (seq === state.loadSeq) showMsg('データを読み込めませんでした<br><span class="note">' + e.message + '</span>'); return; }
+  if (seq !== state.loadSeq) return;
+  state.bars = bars;
+  showMsg(bars.length ? '' : 'この時間足のデータがまだありません<br><span class="note">EAが履歴を送り終えるまでお待ちください</span>');
+  state.digits = state.sym.digits;
+  candle.applyOptions({priceFormat: priceFormat(state.digits)});
+  for (const k of Object.keys(indSeries)){ chart.removeSeries(indSeries[k]); delete indSeries[k]; }
+  render.fresh = true; render(true); render.fresh = false;
+  if (bars.length) chart.timeScale().setVisibleLogicalRange({from: Math.max(0, bars.length - 120), to: bars.length + 5});
+  state.stopLive = state.src.live(state.sym.key, state.tf, onLive, ()=>reloadRecent(50));
+}
+
+function onLive(b){
+  const bars = state.bars;
+  if (!bars.length){ bars.push(b); scheduleRender(true); return; }
+  const last = bars[bars.length-1];
+  if (b.t === last.t){ bars[bars.length-1] = b; scheduleRender(false); }
+  else if (b.t > last.t){
+    bars.push(b); scheduleRender(false);
+    if (!state.demo) reloadRecent(3);   // 確定した直前の足を最終値に揃える
+  }
+}
+
+// 直近n本を取り直して差し替える（新しい足ができた時・再接続時）
+async function reloadRecent(n){
+  if (!state.sym) return;
+  const key = state.sym.key, tf = state.tf;
+  try{
+    const recent = await state.src.history(key, tf, n);
+    if (!state.sym || key !== state.sym.key || tf !== state.tf || !recent.length) return;
+    const map = new Map(state.bars.map((b,i)=>[b.t,i]));
+    for (const b of recent){
+      if (map.has(b.t)) state.bars[map.get(b.t)] = b;
+      else if (b.t > state.bars[state.bars.length-1].t) state.bars.push(b);
+    }
+    state.bars.sort((a,b)=>a.t-b.t);
+    scheduleRender(true);
+  }catch(e){}
+}
+
+/* ---------- UI ---------- */
+function buildTfButtons(){
+  $('tfs').innerHTML = '';
+  for (const tf of TIMEFRAMES){
+    const b = document.createElement('button'); b.textContent = tf; b.className = tf === state.tf ? 'on' : '';
+    b.onclick = ()=>{ state.tf = tf; store.set('tf', tf); buildTfButtons(); load(); };
+    $('tfs').appendChild(b);
+  }
+}
+function paintTz(){ $('tz').textContent = state.tz === 'jst' ? '日本時間' : 'サーバー時間'; }
+$('tz').onclick = ()=>{ state.tz = state.tz === 'jst' ? 'server' : 'jst'; store.set('tz', state.tz); paintTz(); scheduleRender(true); };
+$('sym').onchange = ()=>{ state.sym = state.symbols.find(s=>s.key === $('sym').value); store.set('sym', state.sym.key); load(); };
+
+function saveInd(){ store.set('ind', indState); }
+function buildIndList(){
+  const box = $('indList'); box.innerHTML = '';
+  for (const ind of INDICATORS){
+    const st = indState[ind.id], item = document.createElement('div'); item.className = 'ind-item';
+    const head = document.createElement('label'); head.className = 'head';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = st.on;
+    cb.onchange = ()=>{ st.on = cb.checked; saveInd(); scheduleRender(true); };
+    head.append(cb, document.createTextNode(ind.name + (ind.pane === 'sub' ? '（下段）' : '')));
+    item.appendChild(head);
+    if (ind.params.length){
+      const ps = document.createElement('div'); ps.className = 'params';
+      for (const pr of ind.params){
+        const lab = document.createElement('label'); lab.textContent = pr.label;
+        let inp;
+        if (pr.options){ inp = document.createElement('select'); for (const o of pr.options){ const op = document.createElement('option'); op.value = op.textContent = o; inp.appendChild(op); } }
+        else { inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.inputMode = 'decimal'; }
+        inp.value = st.p[pr.key];
+        inp.onchange = ()=>{
+          const v = pr.options ? inp.value : parseFloat(inp.value);
+          if (!pr.options && !(v > 0)) { inp.value = st.p[pr.key]; return; }
+          st.p[pr.key] = v; saveInd();
+          for (const k of Object.keys(indSeries)) if (k.startsWith(ind.id + ':')){ chart.removeSeries(indSeries[k]); delete indSeries[k]; }
+          scheduleRender(true);
+        };
+        lab.appendChild(inp); ps.appendChild(lab);
+      }
+      item.appendChild(ps);
+    }
+    box.appendChild(item);
+  }
+}
+$('indBtn').onclick = ()=>{ buildIndList(); $('indModal').classList.remove('hidden'); };
+$('indClose').onclick = ()=>$('indModal').classList.add('hidden');
+$('indModal').onclick = e=>{ if (e.target.id === 'indModal') $('indModal').classList.add('hidden'); };
+
+function openCfg(){ $('cfgUrl').value = state.demo && !store.get('db','') ? '' : state.db; $('cfgModal').classList.remove('hidden'); }
+$('cfgBtn').onclick = openCfg;
+$('cfgCancel').onclick = ()=>$('cfgModal').classList.add('hidden');
+$('cfgDemo').onclick = ()=>{ $('cfgModal').classList.add('hidden'); start('demo'); };
+$('cfgSave').onclick = ()=>{
+  const v = $('cfgUrl').value.trim();
+  if (v && v !== 'demo' && !/^https:\/\/[^\s]+$/.test(v)){ $('cfgUrl').focus(); return; }
+  store.set('db', v); $('cfgModal').classList.add('hidden'); start(v || DEFAULT_DB_URL || 'demo');
+};
+
+/* ---------- 起動 ---------- */
+async function start(db){
+  if (state.stopLive){ state.stopLive(); state.stopLive = null; }
+  if (state.statusTimer){ clearInterval(state.statusTimer); state.statusTimer = null; }
+  state.db = db; state.demo = !db || db === 'demo'; state.src = state.demo ? Demo : Firebase;
+  state.lastBeat = 0; state.symbolsRev = null; state.conn = true; state.bars = []; state.sym = null; render(true); paintStatus();
+  showMsg('接続中…');
+  let syms;
+  try{ syms = await state.src.symbols(); }
+  catch(e){ setConn(false); showMsg('データベースに接続できませんでした<br><span class="note">' + e.message + '<br>⚙ からURLを確認してください</span>'); return; }
+  state.symbols = syms;
+  if (!syms.length){ showMsg('まだデータがありません<br><span class="note">VPSでEAが動いているか確認してください</span>'); }
+  const savedSym = store.get('sym', null);
+  state.sym = syms.find(s=>s.key === savedSym) || syms[0] || null;
+  fillSymbolSelect();
+  await refreshStatus();
+  state.statusTimer = setInterval(refreshStatus, 15000);
+  await load();
+}
+setInterval(paintStatus, 5000);
+// スマホでアプリを切り替えて戻ったときは取り直す
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible' && state.src && !state.demo){ refreshStatus(); load(); } });
+
+buildTfButtons(); paintTz();
+start(store.get('db', '') || DEFAULT_DB_URL || 'demo');
+</script>
+</body>
+</html>
