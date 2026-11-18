@@ -108,6 +108,15 @@
   .chip input[type=checkbox]{width:16px;height:16px}
   .chip input[type=number]{width:64px;padding:3px 5px} .chip select{padding:3px 5px}
   .gksess{width:100px;padding:3px 5px}
+  .gklane{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:8px}
+  .gklane h3{margin:0 0 4px;font-size:14px;display:flex;align-items:baseline;gap:8px}
+  .gklane h3 small{color:var(--muted);font-weight:400;font-size:11px}
+  .gklane h3 em{font-style:normal;margin-left:auto}
+  .gklane table{width:100%;border-collapse:collapse;font-size:13px}
+  .gklane th{width:6.5em;text-align:left;color:var(--muted);font-weight:400;padding:3px 8px 3px 0;white-space:nowrap;vertical-align:top}
+  .gklane td{padding:3px 0;font-variant-numeric:tabular-nums}
+  .gklane td:last-child{text-align:right;white-space:nowrap}
+  .gkd{color:var(--muted);font-size:12px} .warn{color:var(--warn)} .gklane .contact{color:var(--warn)}
   .note{color:var(--muted);font-size:12px;line-height:1.6}
 </style>
 </head>
@@ -131,6 +140,14 @@
     <h2>インジケーター（全画面共通）</h2>
     <div id="indList"></div>
     <div class="row"><button id="indClose">閉じる</button></div>
+  </div>
+</div>
+
+<div id="gkModal" class="modal hidden">
+  <div class="sheet">
+    <h2 id="gkTitle">GK_ZONE 詳細</h2>
+    <div id="gkDetail"></div>
+    <div class="row"><button id="gkClose">閉じる</button></div>
   </div>
 </div>
 
@@ -231,8 +248,8 @@ const TA = {
  *  ★ 自作インジケーター（Pine Script）を移植したら、この配列に追加します。
  * ===================================================================== */
 const INDICATORS = [
-  // GK_ZONE（MT5版を移植。詳細設定は「指標」画面から。計算・描画は GKPanel が担当）
-  { id:'gk', name:'GK_ZONE（3時間足 ダウ / ZONE / レンジ）', pane:'main', defaultOn:true, custom:'gk', params:[] },
+  // GK_ZONE（MT5版を移植。レンジ・フィルターは廃止。詳細設定は「指標」画面から。計算・描画は GKPanel が担当）
+  { id:'gk', name:'GK_ZONE（3時間足 ダウ / ZONE）', pane:'main', defaultOn:true, custom:'gk', params:[] },
   {
     id:'ma', name:'移動平均線', pane:'main', defaultOn:true,
     params:[
@@ -291,8 +308,10 @@ const INDICATORS = [
 /* =====================================================================
  *  GK_ZONE（MT5版 GK_ZONE.mq5 1.00 の移植）
  *  ---------------------------------------------------------------------
- *  ・3系統（初期値：現在足 / H1 / H4）のダウ判定・ZONE・レンジ・フィボナッチ
+ *  ・3系統（初期値：現在足 / H1 / H4）のダウ判定・ZONE・フィボナッチ
  *  ・判定部（PivotRange / Trend / Zones）はMQL5コードを機械的に変換したもの
+ *  ・Web版で廃止：レンジ判定、アラート条件のフィルター（ゾーンアラートフィルター・順張り・逆張り・反対ZONE・時間帯）
+ *  ・Web版で追加：ZONE状態「接触中」（その時間足の現在のローソク足がZONEに一部でもかかっている）
  *  ・固定値：lookback=77、swingSpan=3、zoneback=50、保持本数=82（元コードどおり）
  *  ・上位足の位置は「時刻」で対応づけ。チャートに無い古い区間は上位足自体で代用
  * ===================================================================== */
@@ -312,19 +331,17 @@ function I(x){ return IsNA(x) ? IVAL : Math.trunc(x); }
 
 const GK_TFS = ['CUR','M1','M5','M15','M30','H1','H4','D1'];
 const GK_COLORS = {
-  up:'#00ffff', down:'#ff0000', zoneUp:'#00bcd4', zoneDown:'#ff0000', range:'#9c27b0',
-  text:'#ffffff', fibo:'#ffffff', panelUp:'#00ffff', panelDown:'#ff0000', panelRange:'#b45ad0', panelNone:'#808080',
-  wmUp:'#00bcd4', wmDown:'#ff0000', wmNeutral:'#ffffff', wmRange:'#9c27b0',
+  up:'#00ffff', down:'#ff0000', zoneUp:'#00bcd4', zoneDown:'#ff0000',
+  text:'#ffffff', fibo:'#ffffff', panelUp:'#00ffff', panelDown:'#ff0000', panelNone:'#808080',
+  wmUp:'#00bcd4', wmDown:'#ff0000', wmNeutral:'#ffffff',
 };
 function gkLaneDefaults(tf){
-  return {tf, enabled:true, pullback:true, extremes:true, zones:true, range:true, horizontal:false, hbars:50,
+  return {tf, enabled:true, pullback:true, extremes:true, zones:true, horizontal:false, hbars:50,
           zoneAlert:true, lineAlert:false, labels:true, fibo:false};
 }
 const GK_DEFAULTS = {
   lanes:[gkLaneDefaults('CUR'), gkLaneDefaults('H1'), gkLaneDefaults('H4')],
-  shallow:false, follow:false, follow2:false, follow3:false,
-  counterOff:false, counter2:false, counter3:false, oppOff:false, opp2:false, opp3:false,
-  sessionOn:true, session:'0900-0000', panel:true, watermark:true, toast:true,
+  panel:true, watermark:true, toast:true,
 };
 let GKS = null;   // 設定（端末ごとに保存）
 function gkSettings(){
@@ -339,13 +356,6 @@ function gkTFText(min){
   if (min === 1440) return '1D'; if (min === 10080) return '1W';
   if (min >= 60 && min % 60 === 0) return (min/60) + 'H';
   return min + 'm';
-}
-function gkParseSession(s){
-  const m = /^(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(s || '');
-  if (!m) return null;
-  const h1=+m[1], m1=+m[2], h2=+m[3], m2=+m[4];
-  if (h1>23||h2>23||m1>59||m2>59) return null;
-  return {start:h1*60+m1, end:h2*60+m2};
 }
 // 透過（MT5のBlend）を rgba に
 function gkAlpha(hex, transparency){
@@ -366,20 +376,20 @@ function gkResetState(){
     alertlowhigh:NVAL, alerthighlow:NVAL, osilow:NVAL, modosihigh:NVAL,
     fiboosi:0, fiboosiindex:0, fibomodosi:0, fibomodosiindex:0,
     Zonetop:0, Zonebottom:0, Zonecount:0, zzIndex:0,
-    ifrange:false, id:false, id12:false, rangetop:0, rangebottom:0, rangeindex:0,
+    ifrange:false, id:false, id12:false,
     First:true, hyouji:false, last_closed:0,
     anchor:null,   // 下の「位置」が何本目基準かを示すチャート足の時刻（Web版で追加）
   };
 }
 // チャート足の位置（現在足=0）を持つ項目。足が進んだら時刻基準でずらす
-const GK_SHIFT_FIELDS = ['takaneindex','minlowindex','yasuneindex','maxhighindex','rangeindex','zzIndex',
+const GK_SHIFT_FIELDS = ['takaneindex','minlowindex','yasuneindex','maxhighindex','zzIndex',
   'alerttakaneindex','alertyasuneindex','fiboosiindex','fibomodosiindex','alertlowindex','alerthighindex'];
 
 class GKEngine {
   constructor(lane){
     this.lane = lane; this.lookback = 77; this.swingSpan = 3; this.zoneback = 50;
     this.st = gkResetState(); this.committed = Object.assign({}, this.st);
-    this.ready = false; this.dataError = false; this.status = '履歴待機'; this.rangeRightT = null;
+    this.ready = false; this.dataError = false; this.status = '履歴待機'; this.contact = false; this.candle = null;
     this.htf = []; this.hArr = []; this.lArr = []; this.cArr = []; this.oArr = [];
     this.ZigZagType = []; this.ZigZagIndex = []; this.ZoneTop = []; this.ZoneBottom = []; this.ZoneIndex = []; this.ZoneColor = [];
     this.cfg = {}; this.chart = []; this.older = []; this.iter = 0;
@@ -488,18 +498,9 @@ class GKEngine {
     st.pendingIdx=IVAL; st.pendingPrice=NVAL; st.pendingType=IVAL; st.trendDirection=0;
     st.takane=NVAL; st.takaneindex=IVAL; st.yasune=NVAL; st.yasuneindex=IVAL;
     st.maxhigh=NVAL; st.maxhighindex=IVAL; st.minlow=NVAL; st.minlowindex=IVAL;
-    st.rangetop=NVAL; st.rangebottom=NVAL; st.rangeindex=IVAL;
     this.ZigZagType=[]; this.ZigZagIndex=[]; this.ZoneIndex=[]; this.ZoneTop=[]; this.ZoneBottom=[]; this.ZoneColor=[];
     this.PivotRange();
-    if (st.ifrange && this.cfg.useRange){
-      st.trendDirection = 99;
-      if (!IsNA(st.rangeindex)){
-        const idx = st.rangeindex;
-        st.rangeindex = this.MapShift(idx, this.htf[idx] ? this.htf[idx].h : NVAL, true);
-        this.rangeRightT = now;
-      }
-    }
-    if (!st.ifrange && this.CountZigZagType() > 2){
+    if (this.CountZigZagType() > 2){
       this.Trend();
       if (st.trendDirection === 1){
         st.takaneindex = this.MapShift(st.takaneindex, st.takane, true);
@@ -606,177 +607,7 @@ class GKEngine {
       }
     }
     this.st.ifrange = false;
-    if((PGe(this.CountZigZagType(), 4) && PEq(this.cfg.useRange, true))) {
-      {
-        let loop2start =I(0);
-        let loop2step =(loop2start <= I(PSub(this.CountZigZagType(), 4))) ? 1 : -1;
-        for(let m=loop2start; this.G() && (loop2step>0 ? m <= I(PSub(this.CountZigZagType(), 4)) : m >= I(PSub(this.CountZigZagType(), 4))); m+=loop2step) {
-          let type1 = I(this.GetZigZagType(I(m)));
-          let idx1 = I(this.GetZigZagIndex(I(m)));
-          if(PEq(this.st.ifrange, true)) {
-            break;
-          }
-          if(PGe(this.CountZigZagType(), 2)) {
-            {
-              let loop3start =I(PAdd(m, 2));
-              let loop3step =(loop3start <= I(PSub(this.CountZigZagType(), 2))) ? 2 : -2;
-              for(let m2=loop3start; this.G() && (loop3step>0 ? m2 <= I(PSub(this.CountZigZagType(), 2)) : m2 >= I(PSub(this.CountZigZagType(), 2))); m2+=loop3step) {
-                let type2 = I(this.GetZigZagType(I(m2)));
-                let idx2 = I(this.GetZigZagIndex(I(m2)));
-                if(PEq(this.st.ifrange, true)) {
-                  break;
-                }
-                if(PGe(this.CountZigZagType(), 1)) {
-                  {
-                    let loop4start =I(PAdd(m2, 1));
-                    let loop4step =(loop4start <= I(PSub(this.CountZigZagType(), 1))) ? 2 : -2;
-                    for(let m3=loop4start; this.G() && (loop4step>0 ? m3 <= I(PSub(this.CountZigZagType(), 1)) : m3 >= I(PSub(this.CountZigZagType(), 1))); m3+=loop4step) {
-                      let type3 = I(this.GetZigZagType(I(m3)));
-                      let idx3 = I(this.GetZigZagIndex(I(m3)));
-                      if(PEq(this.st.ifrange, true)) {
-                        break;
-                      }
-                      if((PLe(this.GetlArr(I(idx1)), this.GethArr(I(idx2))) && PGe(this.GethArr(I(idx1)), this.GetlArr(I(idx2))))) {
-                        if(PEq(type1, 1)) {
-                          let rangeyasune = this.GetlArr(I(idx2));
-                          let rangeyasuneindex = I(idx2);
-                          {
-                            let loop5start =I(idx2);
-                            let loop5step =(loop5start <= I(idx1)) ? 1 : -1;
-                            for(let i=loop5start; this.G() && (loop5step>0 ? i <= I(idx1) : i >= I(idx1)); i+=loop5step) {
-                              if(PLt(this.GetlArr(I(i)), rangeyasune)) {
-                                rangeyasune = this.GetlArr(I(i));
-                                rangeyasuneindex = i;
-                              }
-                            }
-                          }
-                          if(PGe(this.GethArr(I(idx2)), this.GethArr(I(idx1)))) {
-                            this.st.rangetop = this.GethArr(I(idx1));
-                          }
-                          else {
-                            this.st.rangetop = this.GethArr(I(idx2));
-                          }
-                          this.st.rangeindex = I(idx1);
-                          this.st.id = false;
-                          {
-                            let loop6start =I(idx2);
-                            let loop6step =(loop6start <= I(idx1)) ? 1 : -1;
-                            for(let f=loop6start; this.G() && (loop6step>0 ? f <= I(idx1) : f >= I(idx1)); f+=loop6step) {
-                              if(PLt(this.st.rangetop, this.GetlArr(I(f)))) {
-                                this.st.id = true;
-                                break;
-                              }
-                            }
-                          }
-                          if(PEq(this.st.id, true)) {
-                            break;
-                          }
-                          if((PLe(this.GetlArr(I(rangeyasuneindex)), this.GethArr(I(idx3))) && PGe(this.GethArr(I(rangeyasuneindex)), this.GetlArr(I(idx3))))) {
-                            if(PEq(type3, (-1))) {
-                              if(PGe(this.GetlArr(I(rangeyasuneindex)), this.GetlArr(I(idx3)))) {
-                                this.st.rangebottom = this.GetlArr(I(rangeyasuneindex));
-                                this.st.ifrange = true;
-                              }
-                              else {
-                                this.st.rangebottom = this.GetlArr(I(idx3));
-                                this.st.ifrange = true;
-                              }
-                            }
-                          }
-                          {
-                            let loop7start =I(0);
-                            let loop7step =(loop7start <= I(idx1)) ? 1 : -1;
-                            for(let i=loop7start; this.G() && (loop7step>0 ? i <= I(idx1) : i >= I(idx1)); i+=loop7step) {
-                              if(PGt(this.GetlArr(I(i)), this.st.rangetop)) {
-                                this.st.ifrange = false;
-                                break;
-                              }
-                              if(PLt(this.GethArr(I(i)), this.st.rangebottom)) {
-                                this.st.ifrange = false;
-                                break;
-                              }
-                            }
-                          }
-                        }
-                      }
-                      if((PLe(this.GetlArr(I(idx1)), this.GethArr(I(idx2))) && PGe(this.GethArr(I(idx1)), this.GetlArr(I(idx2))))) {
-                        if(PEq(type1, (-1))) {
-                          let rangetakane = this.GethArr(I(idx2));
-                          let rangetakaneindex = I(idx2);
-                          {
-                            let loop8start =I(idx2);
-                            let loop8step =(loop8start <= I(idx1)) ? 1 : -1;
-                            for(let i=loop8start; this.G() && (loop8step>0 ? i <= I(idx1) : i >= I(idx1)); i+=loop8step) {
-                              if(PGt(this.GethArr(I(i)), rangetakane)) {
-                                rangetakane = this.GethArr(I(i));
-                                rangetakaneindex = i;
-                              }
-                            }
-                          }
-                          if(PLe(this.GetlArr(I(idx2)), this.GetlArr(I(idx1)))) {
-                            this.st.rangebottom = this.GetlArr(I(idx1));
-                          }
-                          else {
-                            this.st.rangebottom = this.GetlArr(I(idx2));
-                          }
-                          this.st.rangeindex = I(idx1);
-                          this.st.id12 = false;
-                          {
-                            let loop9start =I(idx2);
-                            let loop9step =(loop9start <= I(idx1)) ? 1 : -1;
-                            for(let f=loop9start; this.G() && (loop9step>0 ? f <= I(idx1) : f >= I(idx1)); f+=loop9step) {
-                              if(PGt(this.st.rangebottom, this.GethArr(I(f)))) {
-                                this.st.id12 = true;
-                                break;
-                              }
-                            }
-                          }
-                          if(PEq(this.st.id12, true)) {
-                            break;
-                          }
-                          if((PLe(this.GetlArr(I(rangetakaneindex)), this.GethArr(I(idx3))) && PGe(this.GethArr(I(rangetakaneindex)), this.GetlArr(I(idx3))))) {
-                            if(PEq(type3, 1)) {
-                              if(PGe(this.GethArr(I(rangetakaneindex)), this.GethArr(I(idx3)))) {
-                                this.st.rangetop = this.GethArr(I(idx3));
-                              }
-                              else {
-                                this.st.rangetop = this.GethArr(I(rangetakaneindex));
-                              }
-                            }
-                          }
-                          {
-                            let loop10start =I(0);
-                            let loop10step =(loop10start <= I(idx1)) ? 1 : -1;
-                            for(let i=loop10start; this.G() && (loop10step>0 ? i <= I(idx1) : i >= I(idx1)); i+=loop10step) {
-                              if(PGt(this.GetlArr(I(i)), this.st.rangetop)) {
-                                this.st.ifrange = false;
-                                break;
-                              }
-                              if(PLt(this.GethArr(I(i)), this.st.rangebottom)) {
-                                this.st.ifrange = false;
-                                break;
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-                if(PEq(this.st.id, true)) {
-                  this.st.ifrange = false;
-                  break;
-                }
-                if(PEq(this.st.id12, true)) {
-                  this.st.ifrange = false;
-                  break;
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+    // （レンジ判定はWeb版では廃止）
   }
   Trend() {
     this.iter = this.iter || 0;
@@ -1259,7 +1090,7 @@ class GKPanel {
   reset(){
     this.seq++;
     this.engines = [0,1,2].map(i=>new GKEngine(i));
-    this.started = false; this.currentBar = null; this.lastAlertBar = null; this.mainCounterFilter = true;
+    this.started = false; this.currentBar = null; this.lastAlertBar = null;
     this.quiet = true;   // 読み込み直後の1回目はアラートを画面に出さない
     this.htf = {}; this.fetching = {};
     this.refresh();
@@ -1302,10 +1133,10 @@ class GKPanel {
     return {
       tf, minutes:(ln.tf === 'CUR' ? chartSec : TF_SEC[ln.tf]) / 60,
       enabled:ln.enabled, showPullback:ln.pullback, showExtremes:ln.extremes, showZone:ln.zones,
-      useRange:ln.range, horizontal:ln.horizontal, horizontalBars:+ln.hbars || 50,
+      horizontal:ln.horizontal, horizontalBars:+ln.hbars || 50,
       zoneAlert:ln.zoneAlert, lineAlert:ln.lineAlert, labels:ln.labels, fibo:ln.fibo,
       up:GK_COLORS.up, down:GK_COLORS.down, zoneUp:GK_COLORS.zoneUp, zoneDown:GK_COLORS.zoneDown,
-      rangeColor:GK_COLORS.range, textColor:GK_COLORS.text, fiboColor:GK_COLORS.fibo, width:2, fiboWidth:1,
+      textColor:GK_COLORS.text, fiboColor:GK_COLORS.fibo, width:2, fiboWidth:1,
     };
   }
 
@@ -1326,21 +1157,76 @@ class GKPanel {
       if (!e.dataError){ e.Realtime(); e.ready = true; e.status = 'OK'; }
       else e.status = '価格・時刻の対応を確認できません';
     }
-    const session = this.inSession();
-    for (let i = 0; i < 3; i++) this.processAlerts(i, session);
+    for (let i = 0; i < 3; i++){ this.processAlerts(i); this.updateContact(this.engines[i]); }
     // 上位足がすべて揃って1回計算するまでは、読み込み時点の状態でアラートを出さない
     if (!this.engines.some(e=>e.status.startsWith('上位足'))) this.quiet = false;
-    this.model = this.buildModel(session);
+    this.model = this.buildModel();
     this.update();
+    if (gkDetailPanel === this.p) gkRenderDetail();
+  }
+  hit(pt){ const r = this.panelRect; return !!(r && pt.x >= r.x1 && pt.x <= r.x2 && pt.y >= r.y1 && pt.y <= r.y2); }
+
+  /* ---- 詳細（右下の表をタップしたとき） ---- */
+  detailHTML(){
+    const d = this.p.digits, last = this.p.bars[this.p.bars.length-1];
+    if (!last) return '<p class="note">データがありません</p>';
+    const price = last.c, f = v => IsNA(v) ? '-' : (+v).toFixed(d);
+    const pipMul = d === 3 || d === 5 ? Math.pow(10, d-1) : Math.pow(10, d), unit = d === 3 || d === 5 ? 'pips' : 'pt';
+    const dist = v => {
+      if (IsNA(v)) return '';
+      const x = (v - price) * pipMul, a = Math.abs(x);
+      return `<span class="gkd">${x >= 0 ? '+' : '−'}${unit === 'pips' ? a.toFixed(1) : Math.round(a)} ${unit}</span>`;
+    };
+    const row = (k, v, extra='') => `<tr><th>${k}</th><td>${v}</td><td>${extra}</td></tr>`;
+    const names = ['第1系統','第2系統','第3系統'];
+    let html = `<p class="note">現在値（Bid） <b>${f(price)}</b>　距離は現在値からの差（上が＋）</p>`;
+    this.engines.forEach((e, i)=>{
+      const v = e.st, c = e.cfg, dir = v.trendDirection, tf = gkTFText(c.minutes || TF_SEC[this.p.tf]/60);
+      const up = dir === 1, down = dir === -1;
+      const trend = up ? '上昇' : down ? '下降' : 'NONE';
+      const col = up ? GK_COLORS.panelUp : down ? GK_COLORS.panelDown : GK_COLORS.panelNone;
+      html += `<section class="gklane"><h3><span>${tf}</span><small>${names[i]}</small>`;
+      if (!e.ready){ html += `<em style="color:${GK_COLORS.panelNone}">${esc(e.status)}</em></h3></section>`; return; }
+      html += `<em style="color:${col}">ダウ: ${trend}</em></h3><table>`;
+      if (up || down){
+        html += row(up ? '高値' : '安値', f(up ? v.takane : v.yasune), dist(up ? v.takane : v.yasune));
+        html += row(up ? '押し安値' : '戻り高値', f(up ? v.minlow : v.maxhigh), dist(up ? v.minlow : v.maxhigh) +
+          ((up ? PLt(price, v.minlow) : PGt(price, v.maxhigh)) ? ' <b class="warn">割れ</b>' : ''));
+        if (v.Zonecount > 0){
+          const mark = up ? '↑↑↑' : '↓↓↓', alerted = up ? v.alertedL : v.alertedS, cd = e.candle;
+          const lines = [];
+          if (e.contact) lines.push(`<b class="contact">接触中</b>（現在の${tf}足がZONEにかかっている）`);
+          lines.push(alerted ? `<b>${mark}</b> ZONE到達済み（直近${up ? '高値' : '安値'}のあとZONEまで戻った）`
+                             : `未到達（直近${up ? '高値' : '安値'}のあと、まだZONEまで戻っていない）`);
+          html += row('ZONE上限', f(v.Zonetop), dist(v.Zonetop));
+          html += row('ZONE下限', f(v.Zonebottom), dist(v.Zonebottom));
+          html += row('ZONE状態', lines.join('<br>'), `候補 ${v.Zonecount}件`);
+          if (cd) html += row(`現在の${tf}足`, `高 ${f(cd.h)}<br>安 ${f(cd.l)}`, '');
+          html += row(up ? '直近高値' : '直近安値', f(up ? v.alerttakane : v.alertyasune), dist(up ? v.alerttakane : v.alertyasune));
+          const hi = up ? v.alerttakane : v.fibomodosi, lo = up ? v.fiboosi : v.alertyasune;
+          if (!IsNA(hi) && !IsNA(lo)){
+            const lv = [0.382, 0.5, 0.618].map(r=>{ const pr = up ? hi - (hi - lo) * r : lo + (hi - lo) * r; return `${(r*100).toFixed(1)}% ${f(pr)}`; });
+            html += row('フィボ', lv.join('<br>'), '');
+          }
+        } else html += row('ZONE', 'なし', '');
+      } else html += row('状態', '転換点が足りず判定できません', '');
+      html += '</table></section>';
+    });
+    return html;
   }
 
-  inSession(){
-    const s = gkSettings(); if (!s.sessionOn) return true;
-    const ss = gkParseSession(s.session); if (!ss || ss.start === ss.end) return true;
-    const jst = this.currentBar - G.serverOffset + 9*3600;
-    const minute = Math.floor((((jst % 86400) + 86400) % 86400) / 60);
-    if (ss.start < ss.end) return minute >= ss.start && minute < ss.end;
-    return minute >= ss.start || minute < ss.end;
+  // 接触中：その時間足の現在のローソク足が、ZONEに一部でもかかっている
+  updateContact(e){
+    e.contact = false; e.candle = null;
+    if (!e.ready) return;
+    const bars = this.p.bars, sec = e.cfg.minutes * 60, start = Math.floor(this.currentBar / sec) * sec;
+    let h = -Infinity, l = Infinity;
+    for (let k = bars.length - 1; k >= 0 && bars[k].t >= start; k--){ h = Math.max(h, bars[k].h); l = Math.min(l, bars[k].l); }
+    if (!isFinite(h)) return;
+    e.candle = {h, l, t:start};
+    const v = e.st;
+    if ((v.trendDirection === 1 || v.trendDirection === -1) && v.Zonecount > 0)
+      e.contact = PLe(l, v.Zonetop) && PGe(h, v.Zonebottom);
   }
   fire(msg){
     // 1本の足につき1回だけ（元コードの alert.freq_once_per_bar と同じ）
@@ -1353,19 +1239,14 @@ class GKPanel {
     this.toastTimer = setTimeout(()=>this.toastEl.classList.add('hidden'), 8000);
   }
 
-  processAlerts(index, session){
-    const E = this.engines, e = E[index]; if (!e.ready) return;
-    const S = gkSettings(), v = e.st, c = e.cfg;
+  processAlerts(index){
+    const e = this.engines[index]; if (!e.ready) return;
+    const v = e.st, c = e.cfg;
     let inL = false, inS = false, lineL = false, lineS = false;
     if (v.trendDirection === 1){
       if (v.alerttakaneindex > 0){
         v.alertlow = v.alerttakane;
         for (let n = 0; n < v.alerttakaneindex; n++) if (PGt(v.alertlow, e.CL(n))) v.alertlow = e.CL(n);
-        if (index === 0){
-          // alertlowindex は元コードで代入されない（NAのまま）。その動作を維持
-          v.alertlowhigh = e.CH(v.alertlowindex);
-          for (let n = 0; n <= v.alertlowindex; n++) if (PLt(v.alertlowhigh, e.CH(n))) v.alertlowhigh = e.CH(n);
-        }
         inL = PGe(v.Zonetop, v.alertlow);
       }
       v.osilow = v.takane;
@@ -1375,71 +1256,48 @@ class GKPanel {
       if (v.alertyasuneindex > 0){
         v.alerthigh = v.alertyasune;
         for (let n = 0; n < v.alertyasuneindex; n++) if (PLt(v.alerthigh, e.CH(n))) v.alerthigh = e.CH(n);
-        if (index === 0){
-          v.alerthighlow = e.CL(v.alerthighindex);
-          for (let n = 0; n <= v.alerthighindex; n++) if (PGt(v.alerthighlow, e.CL(n))) v.alerthighlow = e.CL(n);
-        }
         inS = PLe(v.Zonebottom, v.alerthigh);
       }
       v.modosihigh = v.yasune;
       for (let n = 0; n <= v.yasuneindex; n++) if (PLt(v.modosihigh, e.CH(n))) v.modosihigh = e.CH(n);
       lineS = PLe(v.maxhigh, v.modosihigh);
     }
-    const up = v.trendDirection === 1, down = v.trendDirection === -1;
-    let follow = true, counter = true, opposite = true;
-    if (index === 0 && (up || down)){
-      const d = up ? 1 : -1;
-      if (S.follow) follow = (S.follow2 && E[1].st.trendDirection === d) || (S.follow3 && E[2].st.trendDirection === d);
-      if (S.counterOff){
-        if (S.counter2 && S.counter3) counter = !(E[1].st.trendDirection === -d && E[2].st.trendDirection === -d);
-        else if (S.counter2) counter = E[1].st.trendDirection !== -d;
-        else if (S.counter3) counter = E[2].st.trendDirection !== -d;
-      }
-      if (S.oppOff) for (let k = 1; k < 3; k++){
-        if (!(k === 1 ? S.opp2 : S.opp3) || E[k].st.trendDirection !== -d) continue;
-        if (up && PGe(v.alerttakane, E[k].st.Zonebottom) && PLe(v.alertlowhigh, E[k].st.Zonetop)) opposite = false;
-        if (down && PLe(v.alertyasune, E[k].st.Zonetop) && PGe(v.alerthighlow, E[k].st.Zonebottom)) opposite = false;
-      }
-    }
     const tfText = gkTFText(c.minutes);
-    if (up){
+    if (v.trendDirection === 1){
       if (PNe(v.alerttakane, v.prevTakane)){ v.alertedL = false; v.prevTakane = v.alerttakane; }
       if (PNe(v.Zonetop, v.prevAlertTop)){ v.alertedL = false; v.prevAlertTop = v.Zonetop; }
       if (v.Zonecount === 0) v.alertedL = false;
-      const shallow = !S.shallow || PGe(v.fibo382, v.alertlow) || PGe(v.zoneharf, v.alertlow);
-      if (inL && shallow && session && follow && counter && opposite && !v.alertedL){
+      if (inL && !v.alertedL){
         v.alertedL = true; v.prevTakane = v.alerttakane; v.prevAlertTop = v.Zonetop;
         if (c.zoneAlert) this.fire(tfText + '上昇ZONE');
       }
       if (PNe(v.minlow, v.prevAlertminlow)){ v.alertedlineL = false; v.prevAlertminlow = v.minlow; }
-      if (lineL && !v.alertedlineL && c.lineAlert && session && follow && counter && opposite){
+      if (lineL && !v.alertedlineL && c.lineAlert){
         v.alertedlineL = true; v.prevAlertminlow = v.minlow; this.fire(tfText + '上昇押し安値');
       }
-    } else if (down){
+    } else if (v.trendDirection === -1){
       if (PNe(v.alertyasune, v.prevYasune)){ v.alertedS = false; v.prevYasune = v.alertyasune; }
       if (PNe(v.Zonebottom, v.prevAlertBottom)){ v.alertedS = false; v.prevAlertBottom = v.Zonebottom; }
       if (v.Zonecount === 0) v.alertedS = false;
-      const shallow = !S.shallow || PLe(v.fibo382, v.alerthigh) || PLe(v.zoneharf, v.alerthigh);
-      if (inS && shallow && session && follow && counter && opposite && !v.alertedS){
+      if (inS && !v.alertedS){
         v.alertedS = true; v.prevYasune = v.alertyasune; v.prevAlertBottom = v.Zonebottom;
         if (c.zoneAlert) this.fire(tfText + '下降ZONE');
       }
       if (PNe(v.maxhigh, v.prevAlertmaxhigh)){ v.alertedlineS = false; v.prevAlertmaxhigh = v.maxhigh; }
-      if (lineS && !v.alertedlineS && c.lineAlert && session && follow && counter && opposite){
+      if (lineS && !v.alertedlineS && c.lineAlert){
         v.alertedlineS = true; v.prevAlertmaxhigh = v.maxhigh; this.fire(tfText + '下降戻り高値');
       }
     }
-    if (index === 0) this.mainCounterFilter = counter;
   }
 
   /* ---- 描画内容を組み立てる（MT5版 RenderLane / RenderPanel / RenderWatermark） ---- */
-  buildModel(session){
+  buildModel(){
     const S = gkSettings(), m = {lines:[], boxes:[], texts:[], rows:[], wm:null};
     const last = this.p.bars.length - 1;
     this.engines.forEach((e, index)=>{
       const v = e.st, c = e.cfg;
       if (!c.enabled || !e.ready) return;
-      const up = v.trendDirection === 1, down = v.trendDirection === -1, rng = v.trendDirection === 99;
+      const up = v.trendDirection === 1, down = v.trendDirection === -1;
       const lineColor = up ? c.up : c.down, tfText = gkTFText(c.minutes);
       const labelLi = last + (index === 0 ? 7 : (index === 1 ? -8 : -23));
       const textColor = gkAlpha(c.textColor, 50);
@@ -1449,11 +1307,6 @@ class GKPanel {
         const price = up ? v.minlow : v.maxhigh;
         m.lines.push({li:e.logical(up ? v.minlowindex : v.maxhighindex), price, color:lineColor, width:c.width, ray:true});
         if (c.labels) m.texts.push({li:labelLi, price, text:tfText + (up ? '押し' : '戻し'), color:textColor});
-      }
-      if (rng && c.useRange){
-        const right = e.rangeRightT != null ? e.shiftOfTime(e.rangeRightT) : 0;
-        m.boxes.push({li:e.logical(v.rangeindex), li2:right == null ? null : (last - right) + 1,
-                      top:v.rangetop, bottom:v.rangebottom, color:gkAlpha(c.rangeColor, 50)});
       }
       if ((up || down) && c.showZone && v.Zonecount > 0){
         m.boxes.push({li:e.logical(v.zzIndex), li2:null, top:v.Zonetop, bottom:v.Zonebottom, color:gkAlpha(up ? c.zoneUp : c.zoneDown, 80)});
@@ -1472,11 +1325,11 @@ class GKPanel {
     if (S.panel){
       this.engines.forEach((e, i)=>{
         const v = e.st, d = v.trendDirection, tfText = gkTFText(e.cfg.minutes || TF_SEC[this.p.tf]/60);
-        const trend = d === 1 ? '上昇' : d === -1 ? '下降' : d === 99 ? 'レンジ' : 'NONE';
-        let color = d === 1 ? GK_COLORS.panelUp : d === -1 ? GK_COLORS.panelDown : d === 99 ? GK_COLORS.panelRange : GK_COLORS.panelNone;
-        let zone = d === 99 ? '↗↘↗' : (session && d === 1 && v.alertedL ? '↑↑↑' : (session && d === -1 && v.alertedS ? '↓↓↓' : 'NONE'));
-        if (i === 0 && !this.mainCounterFilter && d !== 99) zone = 'NONE';
-        let text = `${tfText}   ダウ: ${trend}   ZONE: ${zone}`, short = `${tfText} ${trend} ${zone === 'NONE' ? '-' : zone}`;
+        const trend = d === 1 ? '上昇' : d === -1 ? '下降' : 'NONE';
+        let color = d === 1 ? GK_COLORS.panelUp : d === -1 ? GK_COLORS.panelDown : GK_COLORS.panelNone;
+        const mark = d === 1 && v.alertedL ? '↑↑↑' : d === -1 && v.alertedS ? '↓↓↓' : '';
+        let zone = e.contact ? (mark ? mark + ' 接触中' : '接触中') : (mark || 'NONE');
+        let text = `${tfText}   ダウ: ${trend}   ZONE: ${zone}`, short = `${tfText} ${trend} ${(mark ? mark[0] : '') + (e.contact ? '接触' : '') || '-'}`;
         if (!e.ready){
           text = `${tfText}   ${e.status}`; color = GK_COLORS.panelNone;
           short = `${tfText} ${e.status === 'OFF' ? 'OFF' : e.status.startsWith('設定足') ? '対象外' : '待機中'}`;
@@ -1485,10 +1338,10 @@ class GKPanel {
       });
     }
     if (S.watermark){
-      let up = true, down = true, rng = false;
-      for (const e of this.engines){ if (!e.ready) continue; const d = e.st.trendDirection; up = up && d === 1; down = down && d === -1; rng = rng || d === 99; }
-      const col = rng ? GK_COLORS.wmRange : up ? GK_COLORS.wmUp : down ? GK_COLORS.wmDown : GK_COLORS.wmNeutral;
-      m.wm = gkAlpha(col, rng || up || down ? 50 : 80);
+      let up = true, down = true;
+      for (const e of this.engines){ if (!e.ready) continue; const d = e.st.trendDirection; up = up && d === 1; down = down && d === -1; }
+      const col = up ? GK_COLORS.wmUp : down ? GK_COLORS.wmDown : GK_COLORS.wmNeutral;
+      m.wm = gkAlpha(col, up || down ? 50 : 80);
     }
     return m;
   }
@@ -1496,7 +1349,7 @@ class GKPanel {
   update(){ if (this.requestUpdate) this.requestUpdate(); }
 
   draw(target, background){
-    const m = this.model; if (!m || !this.lc) return;
+    const m = this.model; if (!m || !this.lc){ this.panelRect = null; return; }
     target.useMediaCoordinateSpace(({context:ctx, mediaSize})=>{
       const ts = this.lc.timeScale(), W = mediaSize.width, H = mediaSize.height;
       const X = li => li == null || IsNA(li) ? null : ts.logicalToCoordinate(li);
@@ -1530,16 +1383,31 @@ class GKPanel {
         const fs = small ? 10 : 12, lh = fs + 6;
         ctx.font = `${fs}px sans-serif`; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
         const useShort = m.rows.some(r=>ctx.measureText(r.text).width > W - 70);
+        let minX = W;
         m.rows.forEach((row, i)=>{
-          const r = {text: useShort ? row.short : row.text, color: row.color};
+          const r = {text: (useShort ? row.short : row.text) + (i === 0 ? ' ⓘ' : ''), color: row.color};
+          minX = Math.min(minX, W - 10 - ctx.measureText(r.text).width - 4);
           const y = H - 8 - (m.rows.length - 1 - i) * lh;
           ctx.fillStyle = 'rgba(15,17,21,.75)';
           const w = ctx.measureText(r.text).width; ctx.fillRect(W - 10 - w - 4, y - fs - 3, w + 8, fs + 6);
           ctx.fillStyle = r.color; ctx.fillText(r.text, W - 10, y);
         });
+        // タップ判定用の範囲（少し広めに取る）
+        this.panelRect = {x1:minX - 12, y1:H - 8 - m.rows.length * lh - 12, x2:W, y2:H};
       }
+      if (!m.rows.length) this.panelRect = null;
     });
   }
+}
+
+/* ---------- 右下の表の詳細画面 ---------- */
+let gkDetailPanel = null;
+function gkOpenDetail(panel){ gkDetailPanel = panel; gkRenderDetail(); $('gkModal').classList.remove('hidden'); }
+function gkCloseDetail(){ gkDetailPanel = null; $('gkModal').classList.add('hidden'); }
+function gkRenderDetail(){
+  const p = gkDetailPanel; if (!p || !p.sym) return;
+  $('gkTitle').textContent = `GK_ZONE 詳細　${p.sym.name} · ${p.tf}`;
+  $('gkDetail').innerHTML = p.gk.detailHTML();
 }
 
 /* ---------- GK_ZONE の詳細設定（指標画面の中） ---------- */
@@ -1565,7 +1433,7 @@ function gkBuildSettings(box, onChange){
     head.append(tfl, chk(ln,'enabled','表示'));
     const row = document.createElement('div'); row.className = 'gkrow';
     row.append(chk(ln,'extremes','高値/安値'), chk(ln,'pullback','押し安値/戻り高値'), chk(ln,'zones','ZONE'),
-               chk(ln,'range','レンジ'), chk(ln,'fibo','フィボナッチ'), chk(ln,'labels','ラベル'),
+               chk(ln,'fibo','フィボナッチ'), chk(ln,'labels','ラベル'),
                chk(ln,'zoneAlert','ZONEアラート'), chk(ln,'lineAlert','ラインアラート'));
     const hz = document.createElement('div'); hz.className = 'gkrow';
     const hb = document.createElement('label'); hb.className = 'chip'; hb.textContent = '水平 本数 ';
@@ -1575,22 +1443,6 @@ function gkBuildSettings(box, onChange){
     hz.append(chk(ln,'horizontal','水平（ZONEを直近の本数内に限定）'), hb);
     fs.append(head, row, hz); wrap.appendChild(fs);
   });
-  const fa = document.createElement('fieldset'); fa.innerHTML = '<legend>アラート条件（元コードと同じ）</legend>';
-  const r1 = document.createElement('div'); r1.className = 'gkrow';
-  r1.append(chk(S,'shallow','ゾーンアラートフィルター'));
-  const r2 = document.createElement('div'); r2.className = 'gkrow';
-  r2.append(chk(S,'follow','第1系統の順張りアラートON'), chk(S,'follow2','第2系統'), chk(S,'follow3','第3系統'));
-  const r3 = document.createElement('div'); r3.className = 'gkrow';
-  r3.append(chk(S,'counterOff','第1系統の逆張りアラートOFF'), chk(S,'counter2','第2系統'), chk(S,'counter3','第3系統'));
-  const r4 = document.createElement('div'); r4.className = 'gkrow';
-  r4.append(chk(S,'oppOff','反対ZONE内アラートOFF'), chk(S,'opp2','第2系統'), chk(S,'opp3','第3系統'));
-  const r5 = document.createElement('div'); r5.className = 'gkrow';
-  const sl = document.createElement('label'); sl.className = 'chip'; sl.textContent = '時間帯（日本時間） ';
-  const si = document.createElement('input'); si.type = 'text'; si.value = S.session; si.className = 'gksess'; si.placeholder = '0900-0000';
-  si.onchange = ()=>{ if (!gkParseSession(si.value.trim())){ si.value = S.session; return; } S.session = si.value.trim(); gkSave(); onChange(); };
-  sl.appendChild(si);
-  r5.append(chk(S,'sessionOn','時間帯で絞る'), sl);
-  fa.append(r1, r2, r3, r4, r5); wrap.appendChild(fa);
   const fd = document.createElement('fieldset'); fd.innerHTML = '<legend>表示</legend>';
   const r6 = document.createElement('div'); r6.className = 'gkrow';
   r6.append(chk(S,'panel','情報パネル'), chk(S,'watermark','背景文字'), chk(S,'toast','画面内アラート'));
@@ -1838,6 +1690,8 @@ class Panel {
     this.bars = []; this.sym = null; this.digits = 3; this.quote = null; this.askLine = null;
     this.unsub = null; this.loadSeq = 0; this.rafPending = false; this.rafFull = false; this.fresh = false;
     this.gk = new GKPanel(this);
+    // 右下の表をタップ・クリックすると詳細を開く
+    this.chart.subscribeClick(pt=>{ if (pt && pt.point && (pt.paneIndex ?? 0) === 0 && this.gk.hit(pt.point)) gkOpenDetail(this); });
     this.chart.subscribeCrosshairMove(p=>this.updateLegend(p && p.logical != null && p.time != null ? Math.round(p.logical) : null));
     this.selSym.onchange = ()=>onPanelSymbol(this, this.selSym.value);
     el.querySelector('.pmax').onclick = ()=>toggleMax(this.i);
@@ -2032,6 +1886,7 @@ class Panel {
   }
 
   destroy(){
+    if (gkDetailPanel === this) gkCloseDetail();
     this.loadSeq++;
     if (this.unsub){ this.unsub(); this.unsub = null; }
     this.chart.remove(); this.el.remove();
@@ -2163,6 +2018,8 @@ function buildIndList(){
     box.appendChild(item);
   }
 }
+$('gkClose').onclick = gkCloseDetail;
+$('gkModal').onclick = e=>{ if (e.target.id === 'gkModal') gkCloseDetail(); };
 $('indBtn').onclick = ()=>{ buildIndList(); $('indModal').classList.remove('hidden'); };
 $('indClose').onclick = ()=>$('indModal').classList.add('hidden');
 $('indModal').onclick = e=>{ if (e.target.id === 'indModal') $('indModal').classList.add('hidden'); };
