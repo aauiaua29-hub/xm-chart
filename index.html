@@ -18,29 +18,71 @@
     -webkit-tap-highlight-color:transparent;overscroll-behavior:none}
   body{display:flex;flex-direction:column;height:100vh;height:100dvh;
     padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
-  header{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;background:var(--panel);border-bottom:1px solid var(--line)}
   select,button,input{font:inherit;color:var(--text);background:#1f2430;border:1px solid var(--line);border-radius:6px}
-  select{padding:6px 8px;font-weight:600}
   button{padding:6px 10px;cursor:pointer;white-space:nowrap}
   button.on{background:var(--accent);border-color:var(--accent);color:#fff}
-  #status{flex:1;display:flex;align-items:center;gap:6px;min-width:0;color:var(--muted);font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
+  /* 上部の共通メニュー */
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .seg{display:flex}
+  .seg button{border-radius:0;padding:6px 11px;margin-left:-1px}
+  .seg button:first-child{border-radius:6px 0 0 6px;margin-left:0}
+  .seg button:last-child{border-radius:0 6px 6px 0}
+  .seg .lbl{color:var(--muted);font-size:12px;margin-right:6px;align-self:center}
+  #status{flex:1;display:flex;align-items:center;gap:6px;min-width:0;color:var(--muted);font-size:12px;overflow:hidden;white-space:nowrap}
+  #statusText{overflow:hidden;text-overflow:ellipsis}
   #dot{width:8px;height:8px;border-radius:50%;background:#555;flex:none}
-  #tfs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;order:10;flex-basis:100%}
-  #tfs::-webkit-scrollbar{display:none}
-  #tfs button{padding:5px 10px;font-size:13px}
-  @media (min-width:900px){ #tfs{order:0;flex-basis:auto} #status{order:5} #tz,#indBtn,#cfgBtn{order:6} }
+  @media (max-width:640px){
+    #status{order:10;flex-basis:100%} .seg .lbl{display:none}
+    header{gap:4px;padding:5px 6px} header button{padding:5px 8px;font-size:13px} .seg button{padding:5px 10px}
+    #link .txt{display:none}
+  }
+
+  /* チャートの並べ方 */
   main{position:relative;flex:1;min-height:0}
-  #chart{position:absolute;inset:0}
-  #legend{position:absolute;left:8px;top:6px;z-index:3;max-width:calc(100% - 90px);pointer-events:none;font-size:12px;line-height:1.5;
+  #grid{position:absolute;inset:0;display:grid;gap:2px;background:var(--line)}
+  #grid.n1{grid-template-columns:1fr;grid-template-rows:1fr}
+  #grid.n2{grid-template-columns:1fr 1fr;grid-template-rows:1fr}
+  #grid.n3{grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr}
+  #grid.n4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+  @media (max-width:900px){
+    #grid.n2{grid-template-columns:1fr;grid-template-rows:1fr 1fr}
+    #grid.n3{grid-template-columns:1fr;grid-template-rows:1fr 1fr 1fr}
+  }
+  #grid.max{grid-template-columns:1fr!important;grid-template-rows:1fr!important}
+  #grid.max .panel:not(.isMax){display:none}
+
+  .panel{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg);container-type:inline-size}
+  .ptfsel{display:none;padding:4px 4px;font-size:13px}
+  .phead{display:flex;align-items:center;gap:4px;padding:4px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .psym{padding:4px 6px;font-weight:600;font-size:13px;max-width:42%}
+  .ptfs{display:flex;gap:2px;overflow-x:auto;flex:1;scrollbar-width:none}
+  .ptfs::-webkit-scrollbar{display:none}
+  .ptfs button{padding:3px 7px;font-size:12px}
+  .pmax{padding:3px 8px;font-size:13px}
+  #grid.n1 .pmax{display:none}
+  .pbody{position:relative;flex:1;min-height:0}
+  .pchart{position:absolute;inset:0}
+
+  .legend{position:absolute;left:6px;top:4px;z-index:3;pointer-events:none;font-size:12px;line-height:1.5;max-width:calc(100% - 80px);
     text-shadow:0 0 3px var(--bg),0 0 3px var(--bg)}
-  @media (max-width:600px){ #legend{font-size:11px} }
-  #legend .sym{font-weight:700;font-size:13px}
-  #legend .up{color:var(--up)} #legend .down{color:var(--down)}
-  #legend .ind span{margin-right:10px}
-  #legend .quote{color:#c9ced6} #legend .quote b{color:#f5b041;font-weight:600}
-  #msg{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:4;max-width:90%;
-    background:rgba(22,26,34,.95);border:1px solid var(--line);border-radius:8px;padding:14px 16px;text-align:center;line-height:1.6}
+  #grid:not(.n1):not(.max) .legend{font-size:11px}
+  .legend .sym{font-weight:700}
+  .legend .up{color:var(--up)} .legend .down{color:var(--down)}
+  .legend .ind span{margin-right:8px}
+  .legend .quote{color:#c9ced6} .legend .quote b{color:#f5b041;font-weight:600}
+  .msg,#gmsg{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);z-index:4;max-width:90%;
+    background:rgba(22,26,34,.95);border:1px solid var(--line);border-radius:8px;padding:12px 14px;text-align:center;line-height:1.6;font-size:13px}
+  #gmsg{z-index:6}
   .hidden{display:none!important}
+  /* 画面の幅が狭いとき（スマホで2×2など）は表示を簡略化 */
+  @container (max-width:430px){
+    .ptfs{display:none} .ptfsel{display:block} .phead{gap:3px} .psym{max-width:none;flex:1;min-width:0}
+    .legend{font-size:11px!important;max-width:calc(100% - 64px)}
+    .legend .ohlc,.legend .ind,.legend .qba{display:none}
+  }
+
+  /* 設定画面 */
   .modal{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center}
   .sheet{background:var(--panel);width:100%;max-width:520px;max-height:80vh;overflow:auto;border-radius:14px 14px 0 0;
     padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
@@ -54,27 +96,39 @@
   .params input,.params select{width:80px;padding:4px 6px}
   .row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
   #cfgUrl{width:100%;padding:8px}
+  /* GK_ZONE */
+  .gktoast{position:absolute;left:50%;top:8px;transform:translateX(-50%);z-index:5;max-width:92%;
+    background:rgba(245,176,65,.95);color:#111;font-weight:600;font-size:13px;border-radius:8px;padding:7px 12px;
+    box-shadow:0 2px 10px rgba(0,0,0,.5);pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .gkset{margin-top:8px} .gkset summary{cursor:pointer;color:var(--accent);font-size:13px;padding:4px 0}
+  .gkset fieldset{border:1px solid var(--line);border-radius:8px;margin:8px 0 0;padding:6px 8px 8px}
+  .gkset legend{font-size:12px;color:var(--muted);padding:0 4px}
+  .gkrow{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:6px}
+  .chip{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text)}
+  .chip input[type=checkbox]{width:16px;height:16px}
+  .chip input[type=number]{width:64px;padding:3px 5px} .chip select{padding:3px 5px}
+  .gksess{width:100px;padding:3px 5px}
   .note{color:var(--muted);font-size:12px;line-height:1.6}
 </style>
 </head>
 <body>
 <header>
-  <select id="sym" aria-label="銘柄"></select>
-  <div id="tfs"></div>
-  <div id="status"><span id="dot"></span><span id="statusText">接続中…</span></div>
+  <div class="seg" id="layout"><span class="lbl">画面</span></div>
+  <button id="link" title="オンにすると全画面の銘柄がそろって切り替わります">🔗<span class="txt"> 連動</span></button>
   <button id="tz" title="時刻表示の切り替え">日本時間</button>
   <button id="indBtn">指標</button>
+  <button id="gkBtn" title="GK_ZONEの表示オン・オフ">GK</button>
   <button id="cfgBtn" aria-label="設定">⚙</button>
+  <div id="status"><span id="dot"></span><span id="statusText">接続中…</span></div>
 </header>
 <main>
-  <div id="chart"></div>
-  <div id="legend"></div>
-  <div id="msg" class="hidden"></div>
+  <div id="grid" class="n1"></div>
+  <div id="gmsg" class="hidden"></div>
 </main>
 
 <div id="indModal" class="modal hidden">
   <div class="sheet">
-    <h2>インジケーター</h2>
+    <h2>インジケーター（全画面共通）</h2>
     <div id="indList"></div>
     <div class="row"><button id="indClose">閉じる</button></div>
   </div>
@@ -177,6 +231,8 @@ const TA = {
  *  ★ 自作インジケーター（Pine Script）を移植したら、この配列に追加します。
  * ===================================================================== */
 const INDICATORS = [
+  // GK_ZONE（MT5版を移植。詳細設定は「指標」画面から。計算・描画は GKPanel が担当）
+  { id:'gk', name:'GK_ZONE（3時間足 ダウ / ZONE / レンジ）', pane:'main', defaultOn:true, custom:'gk', params:[] },
   {
     id:'ma', name:'移動平均線', pane:'main', defaultOn:true,
     params:[
@@ -231,21 +287,1353 @@ const INDICATORS = [
   // },
 ];
 
+
+/* =====================================================================
+ *  GK_ZONE（MT5版 GK_ZONE.mq5 1.00 の移植）
+ *  ---------------------------------------------------------------------
+ *  ・3系統（初期値：現在足 / H1 / H4）のダウ判定・ZONE・レンジ・フィボナッチ
+ *  ・判定部（PivotRange / Trend / Zones）はMQL5コードを機械的に変換したもの
+ *  ・固定値：lookback=77、swingSpan=3、zoneback=50、保持本数=82（元コードどおり）
+ *  ・上位足の位置は「時刻」で対応づけ。チャートに無い古い区間は上位足自体で代用
+ * ===================================================================== */
+const GK_KEEP = 82;
+const NVAL = null, IVAL = -2147483648;
+function IsNA(x){ return x === null || x === undefined || (typeof x === 'number' && (x === IVAL || !isFinite(x))); }
+function PEq(a,b){ return !IsNA(a) && !IsNA(b) && a == b; }
+function PNe(a,b){ return !IsNA(a) && !IsNA(b) && a != b; }
+function PLt(a,b){ return !IsNA(a) && !IsNA(b) && a <  b; }
+function PGt(a,b){ return !IsNA(a) && !IsNA(b) && a >  b; }
+function PLe(a,b){ return !IsNA(a) && !IsNA(b) && a <= b; }
+function PGe(a,b){ return !IsNA(a) && !IsNA(b) && a >= b; }
+function PAdd(a,b){ return IsNA(a)||IsNA(b) ? NVAL : a+b; }
+function PSub(a,b){ return IsNA(a)||IsNA(b) ? NVAL : a-b; }
+function PMul(a,b){ return IsNA(a)||IsNA(b) ? NVAL : a*b; }
+function I(x){ return IsNA(x) ? IVAL : Math.trunc(x); }
+
+const GK_TFS = ['CUR','M1','M5','M15','M30','H1','H4','D1'];
+const GK_COLORS = {
+  up:'#00ffff', down:'#ff0000', zoneUp:'#00bcd4', zoneDown:'#ff0000', range:'#9c27b0',
+  text:'#ffffff', fibo:'#ffffff', panelUp:'#00ffff', panelDown:'#ff0000', panelRange:'#b45ad0', panelNone:'#808080',
+  wmUp:'#00bcd4', wmDown:'#ff0000', wmNeutral:'#ffffff', wmRange:'#9c27b0',
+};
+function gkLaneDefaults(tf){
+  return {tf, enabled:true, pullback:true, extremes:true, zones:true, range:true, horizontal:false, hbars:50,
+          zoneAlert:true, lineAlert:false, labels:true, fibo:false};
+}
+const GK_DEFAULTS = {
+  lanes:[gkLaneDefaults('CUR'), gkLaneDefaults('H1'), gkLaneDefaults('H4')],
+  shallow:false, follow:false, follow2:false, follow3:false,
+  counterOff:false, counter2:false, counter3:false, oppOff:false, opp2:false, opp3:false,
+  sessionOn:true, session:'0900-0000', panel:true, watermark:true, toast:true,
+};
+let GKS = null;   // 設定（端末ごとに保存）
+function gkSettings(){
+  if (GKS) return GKS;
+  const saved = store.get('gk', {}) || {};
+  GKS = Object.assign({}, GK_DEFAULTS, saved);
+  GKS.lanes = GK_DEFAULTS.lanes.map((d,i)=>Object.assign({}, d, (saved.lanes || [])[i] || {}));
+  return GKS;
+}
+function gkSave(){ store.set('gk', GKS); }
+function gkTFText(min){
+  if (min === 1440) return '1D'; if (min === 10080) return '1W';
+  if (min >= 60 && min % 60 === 0) return (min/60) + 'H';
+  return min + 'm';
+}
+function gkParseSession(s){
+  const m = /^(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(s || '');
+  if (!m) return null;
+  const h1=+m[1], m1=+m[2], h2=+m[3], m2=+m[4];
+  if (h1>23||h2>23||m1>59||m2>59) return null;
+  return {start:h1*60+m1, end:h2*60+m2};
+}
+// 透過（MT5のBlend）を rgba に
+function gkAlpha(hex, transparency){
+  const n = parseInt(hex.slice(1), 16), a = (100 - transparency) / 100;
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+function gkResetState(){
+  return {
+    pendingIdx:IVAL, pendingPrice:NVAL, pendingType:IVAL, trendDirection:0,
+    takane:NVAL, takaneindex:IVAL, yasune:NVAL, yasuneindex:IVAL,
+    maxhigh:NVAL, maxhighindex:IVAL, minlow:NVAL, minlowindex:IVAL,
+    takaneflag:true, yasuneflag:true,
+    alerttakane:0, alerttakaneindex:0, alertyasune:0, alertyasuneindex:0,
+    fibo382:0, zoneharf:0, prevTakane:NVAL, prevYasune:NVAL,
+    alertedL:false, alertedS:false, alertedlineL:false, alertedlineS:false,
+    prevAlertTop:NVAL, prevAlertBottom:NVAL, prevAlertminlow:NVAL, prevAlertmaxhigh:NVAL,
+    alertlow:NVAL, alertlowindex:IVAL, alerthigh:NVAL, alerthighindex:IVAL,
+    alertlowhigh:NVAL, alerthighlow:NVAL, osilow:NVAL, modosihigh:NVAL,
+    fiboosi:0, fiboosiindex:0, fibomodosi:0, fibomodosiindex:0,
+    Zonetop:0, Zonebottom:0, Zonecount:0, zzIndex:0,
+    ifrange:false, id:false, id12:false, rangetop:0, rangebottom:0, rangeindex:0,
+    First:true, hyouji:false, last_closed:0,
+    anchor:null,   // 下の「位置」が何本目基準かを示すチャート足の時刻（Web版で追加）
+  };
+}
+// チャート足の位置（現在足=0）を持つ項目。足が進んだら時刻基準でずらす
+const GK_SHIFT_FIELDS = ['takaneindex','minlowindex','yasuneindex','maxhighindex','rangeindex','zzIndex',
+  'alerttakaneindex','alertyasuneindex','fiboosiindex','fibomodosiindex','alertlowindex','alerthighindex'];
+
+class GKEngine {
+  constructor(lane){
+    this.lane = lane; this.lookback = 77; this.swingSpan = 3; this.zoneback = 50;
+    this.st = gkResetState(); this.committed = Object.assign({}, this.st);
+    this.ready = false; this.dataError = false; this.status = '履歴待機'; this.rangeRightT = null;
+    this.htf = []; this.hArr = []; this.lArr = []; this.cArr = []; this.oArr = [];
+    this.ZigZagType = []; this.ZigZagIndex = []; this.ZoneTop = []; this.ZoneBottom = []; this.ZoneIndex = []; this.ZoneColor = [];
+    this.cfg = {}; this.chart = []; this.older = []; this.iter = 0;
+  }
+  commit(){ this.committed = Object.assign({}, this.st); }
+  restore(){ this.st = Object.assign({}, this.committed); this.dataError = false; }
+  G(){ if (++this.iter > 3000000){ this.dataError = true; return false; } return true; }
+
+  /* ---- 配列アクセス（範囲外はNA＋エラー。元コードと同じ） ---- */
+  SafeGet(arr, i){ if (IsNA(i) || i < 0 || i >= arr.length){ this.dataError = true; return NVAL; } return arr[i]; }
+  GethArr(i){ return this.SafeGet(this.hArr, i); }
+  GetlArr(i){ return this.SafeGet(this.lArr, i); }
+  GetcArr(i){ return this.SafeGet(this.cArr, i); }
+  GetoArr(i){ return this.SafeGet(this.oArr, i); }
+  CounthArr(){ return this.hArr.length; }
+  CountlArr(){ return this.lArr.length; }
+  GetZigZagType(i){ return this.SafeGet(this.ZigZagType, i); }
+  GetZigZagIndex(i){ const v = this.SafeGet(this.ZigZagIndex, i); return v === NVAL ? IVAL : v; }
+  CountZigZagType(){ return this.ZigZagType.length; }
+  CountZigZagIndex(){ return this.ZigZagIndex.length; }
+  CountZoneIndex(){ return this.ZoneIndex.length; }
+  GetZoneIndex(i){ const v = this.SafeGet(this.ZoneIndex, i); return v === NVAL ? IVAL : v; }
+  GetZoneTop(i){ return this.SafeGet(this.ZoneTop, i); }
+  GetZoneBottom(i){ return this.SafeGet(this.ZoneBottom, i); }
+  GetZoneColor(i){ return this.SafeGet(this.ZoneColor, i); }
+  PushZigZagType(v){ this.ZigZagType.push(v); }
+  PushZigZagIndex(v){ this.ZigZagIndex.push(v); }
+  PushZoneIndex(v){ this.ZoneIndex.push(v); }
+  PushZoneTop(v){ this.ZoneTop.push(v); }
+  PushZoneBottom(v){ this.ZoneBottom.push(v); }
+  PushZoneColor(v){ this.ZoneColor.push(v); }
+
+  /* ---- チャート足（現在足=0）。チャートに無い古い区間は上位足で補う ---- */
+  bar(i){
+    if (IsNA(i) || i < 0) return null;
+    const n = this.chart.length;
+    if (i < n) return this.chart[n - 1 - i];
+    return this.older[i - n] || null;
+  }
+  CH(i){ const b = this.bar(i); return b ? b.h : NVAL; }
+  CL(i){ const b = this.bar(i); return b ? b.l : NVAL; }
+  barCount(){ return this.chart.length + this.older.length; }
+  // チャート上の横位置（論理インデックス）
+  logical(i){
+    const n = this.chart.length;
+    if (IsNA(i) || i < 0) return null;
+    if (i < n) return n - 1 - i;
+    const b = this.older[i - n]; if (!b) return null;
+    return -(this.chart[0].t - b.t) / this.chartSec;
+  }
+  // 時刻 → 位置（現在足=0）
+  shiftOfTime(t){
+    const bars = this.chart; let lo = 0, hi = bars.length - 1;
+    if (!bars.length || t > bars[hi].t) return null;
+    if (t >= bars[0].t){
+      while (lo < hi){ const mid = (lo + hi + 1) >> 1; if (bars[mid].t <= t) lo = mid; else hi = mid - 1; }
+      return bars.length - 1 - lo;
+    }
+    for (let k = 0; k < this.older.length; k++) if (this.older[k].t <= t) return bars.length + k;
+    return null;
+  }
+
+  /* ---- 上位足の読み込み（MT5版 LoadHTF に相当） ---- */
+  loadHTF(ctx){
+    const cfg = this.cfg;
+    if (!cfg.enabled){ this.status = 'OFF'; return false; }
+    if (cfg.minutes * 60 < ctx.chartSec){ this.status = '設定足がチャート足未満'; return false; }
+    const src = cfg.minutes * 60 === ctx.chartSec ? ctx.chart : ctx.htf[cfg.tf];
+    if (!src || src.length < GK_KEEP + 1){ this.status = '上位足の履歴待機（82本）'; return false; }
+    const closed = src.slice(src.length - GK_KEEP - 1, src.length - 1);
+    this.htf = closed.slice().reverse();       // [0]=最新の確定足
+    this.htfFormingT = src[src.length - 1].t;
+    this.hArr = this.htf.map(b=>b.h); this.lArr = this.htf.map(b=>b.l);
+    this.cArr = this.htf.map(b=>b.c); this.oArr = this.htf.map(b=>b.o);
+    this.chart = ctx.chart; this.chartSec = ctx.chartSec;
+    const first = ctx.chart[0].t;
+    this.older = src === ctx.chart ? [] : src.filter(b=>b.t < first).reverse();
+    return true;
+  }
+
+  // 上位足 idx の区間内で、その高値/安値と一致するチャート足の位置
+  MapShift(idx, price, isHigh){
+    if (IsNA(idx) || idx < 0 || idx >= this.htf.length){ this.dataError = true; return IVAL; }
+    const from = this.htf[idx].t, until = idx > 0 ? this.htf[idx-1].t : this.htfFormingT;
+    const n = this.barCount();
+    for (let i = 0; i < n; i++){
+      const b = this.bar(i);
+      if (b.t < from || b.t >= until) continue;
+      if (PEq(price, isHigh ? b.h : b.l)) return i;
+    }
+    this.dataError = true; return IVAL;
+  }
+
+  // 前回の確定時から足が進んだ分、位置をずらす（時刻基準を保つ）
+  reanchor(now){
+    const st = this.st;
+    if (st.anchor === null || st.anchor === now) { st.anchor = now; return; }
+    const d = this.shiftOfTime(st.anchor);
+    if (d === null) return;
+    for (const k of GK_SHIFT_FIELDS) if (!IsNA(st[k])) st[k] += d;
+    st.anchor = now;
+  }
+
+  Rebuild(now){
+    const st = this.st; this.iter = 0;
+    st.pendingIdx=IVAL; st.pendingPrice=NVAL; st.pendingType=IVAL; st.trendDirection=0;
+    st.takane=NVAL; st.takaneindex=IVAL; st.yasune=NVAL; st.yasuneindex=IVAL;
+    st.maxhigh=NVAL; st.maxhighindex=IVAL; st.minlow=NVAL; st.minlowindex=IVAL;
+    st.rangetop=NVAL; st.rangebottom=NVAL; st.rangeindex=IVAL;
+    this.ZigZagType=[]; this.ZigZagIndex=[]; this.ZoneIndex=[]; this.ZoneTop=[]; this.ZoneBottom=[]; this.ZoneColor=[];
+    this.PivotRange();
+    if (st.ifrange && this.cfg.useRange){
+      st.trendDirection = 99;
+      if (!IsNA(st.rangeindex)){
+        const idx = st.rangeindex;
+        st.rangeindex = this.MapShift(idx, this.htf[idx] ? this.htf[idx].h : NVAL, true);
+        this.rangeRightT = now;
+      }
+    }
+    if (!st.ifrange && this.CountZigZagType() > 2){
+      this.Trend();
+      if (st.trendDirection === 1){
+        st.takaneindex = this.MapShift(st.takaneindex, st.takane, true);
+        st.minlowindex = this.MapShift(st.minlowindex, st.minlow, false);
+      } else if (st.trendDirection === -1){
+        st.yasuneindex = this.MapShift(st.yasuneindex, st.yasune, false);
+        st.maxhighindex = this.MapShift(st.maxhighindex, st.maxhigh, true);
+      }
+      this.Zones();
+    }
+    st.First = false; st.hyouji = true; st.last_closed = this.htf[0].t; st.anchor = now;
+  }
+
+  Realtime(){
+    const st = this.st, CH = i=>this.CH(i), CL = i=>this.CL(i);
+    st.fibo382 = NVAL; st.zoneharf = NVAL;
+    if (st.trendDirection === 1){
+      if (st.takaneflag){
+        st.takane = CH(0); st.takaneindex = 0;
+        for (let k = 0; k <= st.minlowindex; k++) if (PLt(st.takane, CH(k))){ st.takane = CH(k); st.takaneindex = k; }
+      }
+      st.alerttakane = CH(0); st.alerttakaneindex = 0;
+      st.fiboosi = CL(st.zzIndex); st.fiboosiindex = st.zzIndex;
+      if (st.Zonecount > 0){
+        for (let f = 0; f <= st.zzIndex; f++) if (PLt(st.alerttakane, CH(f))){ st.alerttakane = CH(f); st.alerttakaneindex = f; }
+        for (let f = st.alerttakaneindex; f <= st.zzIndex; f++) if (PGt(st.fiboosi, CL(f))){ st.fiboosi = CL(f); st.fiboosiindex = f; }
+        st.fibo382 = PSub(st.alerttakane, PMul(PSub(st.alerttakane, st.fiboosi), 0.382));
+        st.zoneharf = PAdd(st.Zonebottom, PMul(PSub(st.Zonetop, st.Zonebottom), 0.5));
+      }
+    } else if (st.trendDirection === -1){
+      if (st.yasuneflag){
+        st.yasune = CL(0); st.yasuneindex = 0;
+        for (let k = 0; k <= st.maxhighindex; k++) if (PGt(st.yasune, CL(k))){ st.yasune = CL(k); st.yasuneindex = k; }
+      }
+      st.alertyasune = CL(0); st.alertyasuneindex = 0;
+      st.fibomodosi = CH(st.zzIndex); st.fibomodosiindex = st.zzIndex;
+      if (st.Zonecount > 0){
+        for (let f = 0; f <= st.zzIndex; f++) if (PGt(st.alertyasune, CL(f))){ st.alertyasune = CL(f); st.alertyasuneindex = f; }
+        for (let f = st.alertyasuneindex; f <= st.zzIndex; f++) if (PLt(st.fibomodosi, CH(f))){ st.fibomodosi = CH(f); st.fibomodosiindex = f; }
+        st.fibo382 = PAdd(st.alertyasune, PMul(PSub(st.fibomodosi, st.alertyasune), 0.382));
+        st.zoneharf = PAdd(st.Zonebottom, PMul(PSub(st.Zonetop, st.Zonebottom), 0.5));
+      }
+    }
+  }
+
+  /* ---- ここから MQL5 の PivotRange1 / Trend1 / Zones1 を機械変換したもの ---- */
+  PivotRange() {
+    this.iter = this.iter || 0;
+    {
+      let loop0start =I(0);
+      let loop0step =(loop0start <= I(this.lookback)) ? 1 : -1;
+      for(let j=loop0start; this.G() && (loop0step>0 ? j <= I(this.lookback) : j >= I(this.lookback)); j+=loop0step) {
+        let idx = I(PSub(this.lookback, j));
+        if(PLt(PSub(idx, this.swingSpan), 0)) {
+          continue;
+        }
+        let isHigh = true;
+        let isLow = true;
+        {
+          let loop1start =I(1);
+          let loop1step =(loop1start <= I(this.swingSpan)) ? 1 : -1;
+          for(let i=loop1start; this.G() && (loop1step>0 ? i <= I(this.swingSpan) : i >= I(this.swingSpan)); i+=loop1step) {
+            if(((PLt(PSub(idx, i), 0) || PGe(PAdd(idx, i), this.CounthArr())) || PGe(PAdd(idx, i), this.CountlArr()))) {
+              isHigh = false;
+              isLow = false;
+              break;
+            }
+            if((PLt(this.GethArr(I(idx)), this.GethArr(I(PSub(idx, i)))) || PLt(this.GethArr(I(idx)), this.GethArr(I(PAdd(idx, i)))))) {
+              isHigh = false;
+            }
+            if((PGt(this.GetlArr(I(idx)), this.GetlArr(I(PSub(idx, i)))) || PGt(this.GetlArr(I(idx)), this.GetlArr(I(PAdd(idx, i)))))) {
+              isLow = false;
+            }
+          }
+        }
+        if(((!isHigh) && (!isLow))) {
+          continue;
+        }
+        let curPrice = (isHigh ? this.GethArr(I(idx)) : this.GetlArr(I(idx)));
+        let curType = (isHigh ? 1 : (-1));
+        if((IsNA(this.st.pendingType) || PEq(this.st.pendingType, 0))) {
+          this.st.pendingIdx = I(idx);
+          this.st.pendingPrice = curPrice;
+          this.st.pendingType = I(curType);
+          continue;
+        }
+        if(PNe(this.st.pendingType, curType)) {
+          this.PushZigZagType(this.st.pendingType);
+          this.PushZigZagIndex(this.st.pendingIdx);
+          this.st.pendingIdx = I(idx);
+          this.st.pendingPrice = curPrice;
+          this.st.pendingType = I(curType);
+        }
+        else {
+          if((PEq(curType, 1) && PGt(curPrice, this.st.pendingPrice))) {
+            this.st.pendingIdx = I(idx);
+            this.st.pendingPrice = curPrice;
+          }
+          if((PEq(curType, (-1)) && PLt(curPrice, this.st.pendingPrice))) {
+            this.st.pendingIdx = I(idx);
+            this.st.pendingPrice = curPrice;
+          }
+        }
+      }
+    }
+    this.st.ifrange = false;
+    if((PGe(this.CountZigZagType(), 4) && PEq(this.cfg.useRange, true))) {
+      {
+        let loop2start =I(0);
+        let loop2step =(loop2start <= I(PSub(this.CountZigZagType(), 4))) ? 1 : -1;
+        for(let m=loop2start; this.G() && (loop2step>0 ? m <= I(PSub(this.CountZigZagType(), 4)) : m >= I(PSub(this.CountZigZagType(), 4))); m+=loop2step) {
+          let type1 = I(this.GetZigZagType(I(m)));
+          let idx1 = I(this.GetZigZagIndex(I(m)));
+          if(PEq(this.st.ifrange, true)) {
+            break;
+          }
+          if(PGe(this.CountZigZagType(), 2)) {
+            {
+              let loop3start =I(PAdd(m, 2));
+              let loop3step =(loop3start <= I(PSub(this.CountZigZagType(), 2))) ? 2 : -2;
+              for(let m2=loop3start; this.G() && (loop3step>0 ? m2 <= I(PSub(this.CountZigZagType(), 2)) : m2 >= I(PSub(this.CountZigZagType(), 2))); m2+=loop3step) {
+                let type2 = I(this.GetZigZagType(I(m2)));
+                let idx2 = I(this.GetZigZagIndex(I(m2)));
+                if(PEq(this.st.ifrange, true)) {
+                  break;
+                }
+                if(PGe(this.CountZigZagType(), 1)) {
+                  {
+                    let loop4start =I(PAdd(m2, 1));
+                    let loop4step =(loop4start <= I(PSub(this.CountZigZagType(), 1))) ? 2 : -2;
+                    for(let m3=loop4start; this.G() && (loop4step>0 ? m3 <= I(PSub(this.CountZigZagType(), 1)) : m3 >= I(PSub(this.CountZigZagType(), 1))); m3+=loop4step) {
+                      let type3 = I(this.GetZigZagType(I(m3)));
+                      let idx3 = I(this.GetZigZagIndex(I(m3)));
+                      if(PEq(this.st.ifrange, true)) {
+                        break;
+                      }
+                      if((PLe(this.GetlArr(I(idx1)), this.GethArr(I(idx2))) && PGe(this.GethArr(I(idx1)), this.GetlArr(I(idx2))))) {
+                        if(PEq(type1, 1)) {
+                          let rangeyasune = this.GetlArr(I(idx2));
+                          let rangeyasuneindex = I(idx2);
+                          {
+                            let loop5start =I(idx2);
+                            let loop5step =(loop5start <= I(idx1)) ? 1 : -1;
+                            for(let i=loop5start; this.G() && (loop5step>0 ? i <= I(idx1) : i >= I(idx1)); i+=loop5step) {
+                              if(PLt(this.GetlArr(I(i)), rangeyasune)) {
+                                rangeyasune = this.GetlArr(I(i));
+                                rangeyasuneindex = i;
+                              }
+                            }
+                          }
+                          if(PGe(this.GethArr(I(idx2)), this.GethArr(I(idx1)))) {
+                            this.st.rangetop = this.GethArr(I(idx1));
+                          }
+                          else {
+                            this.st.rangetop = this.GethArr(I(idx2));
+                          }
+                          this.st.rangeindex = I(idx1);
+                          this.st.id = false;
+                          {
+                            let loop6start =I(idx2);
+                            let loop6step =(loop6start <= I(idx1)) ? 1 : -1;
+                            for(let f=loop6start; this.G() && (loop6step>0 ? f <= I(idx1) : f >= I(idx1)); f+=loop6step) {
+                              if(PLt(this.st.rangetop, this.GetlArr(I(f)))) {
+                                this.st.id = true;
+                                break;
+                              }
+                            }
+                          }
+                          if(PEq(this.st.id, true)) {
+                            break;
+                          }
+                          if((PLe(this.GetlArr(I(rangeyasuneindex)), this.GethArr(I(idx3))) && PGe(this.GethArr(I(rangeyasuneindex)), this.GetlArr(I(idx3))))) {
+                            if(PEq(type3, (-1))) {
+                              if(PGe(this.GetlArr(I(rangeyasuneindex)), this.GetlArr(I(idx3)))) {
+                                this.st.rangebottom = this.GetlArr(I(rangeyasuneindex));
+                                this.st.ifrange = true;
+                              }
+                              else {
+                                this.st.rangebottom = this.GetlArr(I(idx3));
+                                this.st.ifrange = true;
+                              }
+                            }
+                          }
+                          {
+                            let loop7start =I(0);
+                            let loop7step =(loop7start <= I(idx1)) ? 1 : -1;
+                            for(let i=loop7start; this.G() && (loop7step>0 ? i <= I(idx1) : i >= I(idx1)); i+=loop7step) {
+                              if(PGt(this.GetlArr(I(i)), this.st.rangetop)) {
+                                this.st.ifrange = false;
+                                break;
+                              }
+                              if(PLt(this.GethArr(I(i)), this.st.rangebottom)) {
+                                this.st.ifrange = false;
+                                break;
+                              }
+                            }
+                          }
+                        }
+                      }
+                      if((PLe(this.GetlArr(I(idx1)), this.GethArr(I(idx2))) && PGe(this.GethArr(I(idx1)), this.GetlArr(I(idx2))))) {
+                        if(PEq(type1, (-1))) {
+                          let rangetakane = this.GethArr(I(idx2));
+                          let rangetakaneindex = I(idx2);
+                          {
+                            let loop8start =I(idx2);
+                            let loop8step =(loop8start <= I(idx1)) ? 1 : -1;
+                            for(let i=loop8start; this.G() && (loop8step>0 ? i <= I(idx1) : i >= I(idx1)); i+=loop8step) {
+                              if(PGt(this.GethArr(I(i)), rangetakane)) {
+                                rangetakane = this.GethArr(I(i));
+                                rangetakaneindex = i;
+                              }
+                            }
+                          }
+                          if(PLe(this.GetlArr(I(idx2)), this.GetlArr(I(idx1)))) {
+                            this.st.rangebottom = this.GetlArr(I(idx1));
+                          }
+                          else {
+                            this.st.rangebottom = this.GetlArr(I(idx2));
+                          }
+                          this.st.rangeindex = I(idx1);
+                          this.st.id12 = false;
+                          {
+                            let loop9start =I(idx2);
+                            let loop9step =(loop9start <= I(idx1)) ? 1 : -1;
+                            for(let f=loop9start; this.G() && (loop9step>0 ? f <= I(idx1) : f >= I(idx1)); f+=loop9step) {
+                              if(PGt(this.st.rangebottom, this.GethArr(I(f)))) {
+                                this.st.id12 = true;
+                                break;
+                              }
+                            }
+                          }
+                          if(PEq(this.st.id12, true)) {
+                            break;
+                          }
+                          if((PLe(this.GetlArr(I(rangetakaneindex)), this.GethArr(I(idx3))) && PGe(this.GethArr(I(rangetakaneindex)), this.GetlArr(I(idx3))))) {
+                            if(PEq(type3, 1)) {
+                              if(PGe(this.GethArr(I(rangetakaneindex)), this.GethArr(I(idx3)))) {
+                                this.st.rangetop = this.GethArr(I(idx3));
+                              }
+                              else {
+                                this.st.rangetop = this.GethArr(I(rangetakaneindex));
+                              }
+                            }
+                          }
+                          {
+                            let loop10start =I(0);
+                            let loop10step =(loop10start <= I(idx1)) ? 1 : -1;
+                            for(let i=loop10start; this.G() && (loop10step>0 ? i <= I(idx1) : i >= I(idx1)); i+=loop10step) {
+                              if(PGt(this.GetlArr(I(i)), this.st.rangetop)) {
+                                this.st.ifrange = false;
+                                break;
+                              }
+                              if(PLt(this.GethArr(I(i)), this.st.rangebottom)) {
+                                this.st.ifrange = false;
+                                break;
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                if(PEq(this.st.id, true)) {
+                  this.st.ifrange = false;
+                  break;
+                }
+                if(PEq(this.st.id12, true)) {
+                  this.st.ifrange = false;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  Trend() {
+    this.iter = this.iter || 0;
+    if((PEq(this.st.ifrange, false) && PGt(this.CountZigZagType(), 2))) {
+      let s1type1 = this.GetZigZagType(I(0));
+      let s1type2 = this.GetZigZagType(I(1));
+      let s1type3 = this.GetZigZagType(I(2));
+      let s1idx1 = I(I(this.GetZigZagIndex(I(0))));
+      let s1idx3 = I(I(this.GetZigZagIndex(I(2))));
+      if(((PEq(s1type1, (-1)) && PEq(s1type2, 1)) && PEq(s1type3, (-1)))) {
+        this.st.trendDirection = I((-1));
+        this.st.yasune = this.GetlArr(I(s1idx3));
+        this.st.yasuneindex = I(s1idx3);
+        this.st.maxhigh = this.GethArr(I(s1idx3));
+        this.st.maxhighindex = I(s1idx3);
+        {
+          let loop11start =I(s1idx3);
+          let loop11step =(loop11start <= I(s1idx1)) ? 1 : -1;
+          for(let j=loop11start; this.G() && (loop11step>0 ? j <= I(s1idx1) : j >= I(s1idx1)); j+=loop11step) {
+            if(PLt(this.st.maxhigh, this.GethArr(I(j)))) {
+              this.st.maxhigh = this.GethArr(I(j));
+              this.st.maxhighindex = I(j);
+            }
+          }
+        }
+      }
+      if(((PEq(s1type1, 1) && PEq(s1type2, (-1))) && PEq(s1type3, 1))) {
+        this.st.trendDirection = I(1);
+        this.st.takane = this.GethArr(I(s1idx3));
+        this.st.takaneindex = I(s1idx3);
+        this.st.minlow = this.GetlArr(I(s1idx3));
+        this.st.minlowindex = I(s1idx3);
+        {
+          let loop12start =I(s1idx3);
+          let loop12step =(loop12start <= I(s1idx1)) ? 1 : -1;
+          for(let j=loop12start; this.G() && (loop12step>0 ? j <= I(s1idx1) : j >= I(s1idx1)); j+=loop12step) {
+            if(PGt(this.st.minlow, this.GetlArr(I(j)))) {
+              this.st.minlow = this.GetlArr(I(j));
+              this.st.minlowindex = I(j);
+            }
+          }
+        }
+      }
+      let nuke1 = false;
+      {
+        let loop13start =I(0);
+        let loop13step =(loop13start <= I(this.lookback)) ? 1 : -1;
+        for(let j=loop13start; this.G() && (loop13step>0 ? j <= I(this.lookback) : j >= I(this.lookback)); j+=loop13step) {
+          if(PEq(nuke1, true)) {
+            break;
+          }
+          if(PEq(this.st.trendDirection, 1)) {
+            {
+              let loop14start =I(0);
+              let loop14step =(loop14start <= I(this.st.takaneindex)) ? 1 : -1;
+              for(let i=loop14start; this.G() && (loop14step>0 ? i <= I(this.st.takaneindex) : i >= I(this.st.takaneindex)); i+=loop14step) {
+                let idx = I(PSub(this.st.takaneindex, i));
+                if(PLe(idx, 0)) {
+                  idx = 0;
+                }
+                if(PEq(idx, 0)) {
+                  nuke1 = true;
+                }
+                if(PLt(this.st.takane, this.GethArr(I(idx)))) {
+                  if(PGt(PSub(this.st.takaneindex, idx), this.swingSpan)) {
+                    let befminlow = this.GetlArr(I(idx));
+                    let befminlowindex = I(idx);
+                    {
+                      let loop15start =I(idx);
+                      let loop15step =(loop15start <= I(PSub(this.st.takaneindex, 1))) ? 1 : -1;
+                      for(let k=loop15start; this.G() && (loop15step>0 ? k <= I(PSub(this.st.takaneindex, 1)) : k >= I(PSub(this.st.takaneindex, 1))); k+=loop15step) {
+                        if(PGt(befminlow, this.GetlArr(I(k)))) {
+                          befminlow = this.GetlArr(I(k));
+                          befminlowindex = k;
+                        }
+                      }
+                    }
+                    if(PGe(befminlowindex, this.swingSpan)) {
+                      let ismin = true;
+                      {
+                        let loop16start =I(1);
+                        let loop16step =(loop16start <= I(this.swingSpan)) ? 1 : -1;
+                        for(let k=loop16start; this.G() && (loop16step>0 ? k <= I(this.swingSpan) : k >= I(this.swingSpan)); k+=loop16step) {
+                          if((PGt(befminlow, this.GetlArr(I(PAdd(befminlowindex, k)))) || PGt(befminlow, this.GetlArr(I(PSub(befminlowindex, k)))))) {
+                            ismin = false;
+                          }
+                        }
+                      }
+                      if(PEq(ismin, true)) {
+                        if(PLt(this.st.takane, this.GetcArr(I(idx)))) {
+                          this.st.minlow = befminlow;
+                          this.st.minlowindex = I(befminlowindex);
+                          this.st.takane = this.GethArr(I(idx));
+                          this.st.takaneindex = I(idx);
+                          {
+                            let loop17start =I(idx);
+                            let loop17step =(loop17start <= I(this.st.minlowindex)) ? 1 : -1;
+                            for(let a=loop17start; this.G() && (loop17step>0 ? a <= I(this.st.minlowindex) : a >= I(this.st.minlowindex)); a+=loop17step) {
+                              let aa = I(PSub(PAdd(this.st.minlowindex, idx), a));
+                              if(PLt(this.st.takane, this.GethArr(I(aa)))) {
+                                this.st.takane = this.GethArr(I(aa));
+                                this.st.takaneindex = I(aa);
+                              }
+                            }
+                          }
+                          this.st.takaneflag = true;
+                          break;
+                        }
+                        else {
+                          this.st.takaneflag = false;
+                        }
+                      }
+                      else {
+                        this.st.takane = this.GethArr(I(idx));
+                        this.st.takaneindex = I(idx);
+                        this.st.takaneflag = true;
+                        break;
+                      }
+                    }
+                    else {
+                      this.st.takane = this.GethArr(I(idx));
+                      this.st.takaneindex = I(idx);
+                      this.st.takaneflag = true;
+                      break;
+                    }
+                  }
+                  else {
+                    this.st.takane = this.GethArr(I(idx));
+                    this.st.takaneindex = I(idx);
+                    this.st.takaneflag = true;
+                    break;
+                  }
+                }
+                else {
+                  let befminlow = this.GetlArr(I(idx));
+                  let befminlowindex = I(idx);
+                  {
+                    let loop18start =I(idx);
+                    let loop18step =(loop18start <= I(PSub(this.st.takaneindex, 1))) ? 1 : -1;
+                    for(let k=loop18start; this.G() && (loop18step>0 ? k <= I(PSub(this.st.takaneindex, 1)) : k >= I(PSub(this.st.takaneindex, 1))); k+=loop18step) {
+                      if(PGt(befminlow, this.GetlArr(I(k)))) {
+                        befminlow = this.GetlArr(I(k));
+                        befminlowindex = k;
+                      }
+                    }
+                  }
+                  if(PGe(befminlowindex, this.swingSpan)) {
+                    let ismin = true;
+                    {
+                      let loop19start =I(1);
+                      let loop19step =(loop19start <= I(this.swingSpan)) ? 1 : -1;
+                      for(let k=loop19start; this.G() && (loop19step>0 ? k <= I(this.swingSpan) : k >= I(this.swingSpan)); k+=loop19step) {
+                        if((PGt(befminlow, this.GetlArr(I(PAdd(befminlowindex, k)))) || PGt(befminlow, this.GetlArr(I(PSub(befminlowindex, k)))))) {
+                          ismin = false;
+                        }
+                      }
+                    }
+                    if(PEq(ismin, true)) {
+                      this.st.takaneflag = false;
+                    }
+                  }
+                }
+                if(PGt(this.st.minlow, this.GetcArr(I(idx)))) {
+                  this.st.trendDirection = I((-1));
+                  this.st.maxhigh = this.GethArr(I(idx));
+                  this.st.maxhighindex = I(idx);
+                  this.st.yasune = this.GetlArr(I(idx));
+                  this.st.yasuneindex = I(idx);
+                  this.st.takaneflag = true;
+                  {
+                    let loop20start =I(idx);
+                    let loop20step =(loop20start <= I(this.st.minlowindex)) ? 1 : -1;
+                    for(let k=loop20start; this.G() && (loop20step>0 ? k <= I(this.st.minlowindex) : k >= I(this.st.minlowindex)); k+=loop20step) {
+                      if(PLt(this.st.maxhigh, this.GethArr(I(k)))) {
+                        this.st.maxhigh = this.GethArr(I(k));
+                        this.st.maxhighindex = I(k);
+                      }
+                    }
+                  }
+                  {
+                    let loop21start =I(idx);
+                    let loop21step =(loop21start <= I(this.st.maxhighindex)) ? 1 : -1;
+                    for(let a=loop21start; this.G() && (loop21step>0 ? a <= I(this.st.maxhighindex) : a >= I(this.st.maxhighindex)); a+=loop21step) {
+                      let aa = I(PSub(PAdd(this.st.maxhighindex, idx), a));
+                      if(PGt(this.st.yasune, this.GetlArr(I(aa)))) {
+                        this.st.yasune = this.GetlArr(I(aa));
+                        this.st.yasuneindex = I(aa);
+                      }
+                    }
+                  }
+                  break;
+                }
+              }
+            }
+          }
+          else if(PEq(this.st.trendDirection, (-1))) {
+            {
+              let loop22start =I(0);
+              let loop22step =(loop22start <= I(this.st.yasuneindex)) ? 1 : -1;
+              for(let i=loop22start; this.G() && (loop22step>0 ? i <= I(this.st.yasuneindex) : i >= I(this.st.yasuneindex)); i+=loop22step) {
+                let idx = I(PSub(this.st.yasuneindex, i));
+                if(PLe(idx, 0)) {
+                  idx = 0;
+                }
+                if(PEq(idx, 0)) {
+                  nuke1 = true;
+                }
+                if(PGt(this.st.yasune, this.GetlArr(I(idx)))) {
+                  if(PGt(PSub(this.st.yasuneindex, idx), this.swingSpan)) {
+                    let befmaxhigh = this.GethArr(I(idx));
+                    let befmaxhighindex = I(idx);
+                    {
+                      let loop23start =I(idx);
+                      let loop23step =(loop23start <= I(PSub(this.st.yasuneindex, 1))) ? 1 : -1;
+                      for(let k=loop23start; this.G() && (loop23step>0 ? k <= I(PSub(this.st.yasuneindex, 1)) : k >= I(PSub(this.st.yasuneindex, 1))); k+=loop23step) {
+                        if(PLt(befmaxhigh, this.GethArr(I(k)))) {
+                          befmaxhigh = this.GethArr(I(k));
+                          befmaxhighindex = k;
+                        }
+                      }
+                    }
+                    if(PGe(befmaxhighindex, this.swingSpan)) {
+                      let ismax = true;
+                      {
+                        let loop24start =I(1);
+                        let loop24step =(loop24start <= I(this.swingSpan)) ? 1 : -1;
+                        for(let k=loop24start; this.G() && (loop24step>0 ? k <= I(this.swingSpan) : k >= I(this.swingSpan)); k+=loop24step) {
+                          if((PLt(befmaxhigh, this.GethArr(I(PAdd(befmaxhighindex, k)))) || PLt(befmaxhigh, this.GethArr(I(PSub(befmaxhighindex, k)))))) {
+                            ismax = false;
+                          }
+                        }
+                      }
+                      if(PEq(ismax, true)) {
+                        if(PGt(this.st.yasune, this.GetcArr(I(idx)))) {
+                          this.st.maxhigh = befmaxhigh;
+                          this.st.maxhighindex = I(befmaxhighindex);
+                          this.st.yasune = this.GetlArr(I(idx));
+                          this.st.yasuneindex = I(idx);
+                          {
+                            let loop25start =I(idx);
+                            let loop25step =(loop25start <= I(this.st.maxhighindex)) ? 1 : -1;
+                            for(let a=loop25start; this.G() && (loop25step>0 ? a <= I(this.st.maxhighindex) : a >= I(this.st.maxhighindex)); a+=loop25step) {
+                              let aa = I(PSub(PAdd(this.st.maxhighindex, idx), a));
+                              if(PGt(this.st.yasune, this.GetlArr(I(aa)))) {
+                                this.st.yasune = this.GetlArr(I(aa));
+                                this.st.yasuneindex = I(aa);
+                              }
+                            }
+                          }
+                          this.st.yasuneflag = true;
+                          break;
+                        }
+                        else {
+                          this.st.yasuneflag = false;
+                        }
+                      }
+                      else {
+                        this.st.yasune = this.GetlArr(I(idx));
+                        this.st.yasuneindex = I(idx);
+                        this.st.yasuneflag = true;
+                        break;
+                      }
+                    }
+                    else {
+                      this.st.yasune = this.GetlArr(I(idx));
+                      this.st.yasuneindex = I(idx);
+                      this.st.yasuneflag = true;
+                      break;
+                    }
+                  }
+                  else {
+                    this.st.yasune = this.GetlArr(I(idx));
+                    this.st.yasuneindex = I(idx);
+                    this.st.yasuneflag = true;
+                    break;
+                  }
+                }
+                else {
+                  let befmaxhigh = this.GethArr(I(idx));
+                  let befmaxhighindex = I(idx);
+                  {
+                    let loop26start =I(idx);
+                    let loop26step =(loop26start <= I(PSub(this.st.yasuneindex, 1))) ? 1 : -1;
+                    for(let k=loop26start; this.G() && (loop26step>0 ? k <= I(PSub(this.st.yasuneindex, 1)) : k >= I(PSub(this.st.yasuneindex, 1))); k+=loop26step) {
+                      if(PLt(befmaxhigh, this.GethArr(I(k)))) {
+                        befmaxhigh = this.GethArr(I(k));
+                        befmaxhighindex = k;
+                      }
+                    }
+                  }
+                  if(PGe(befmaxhighindex, this.swingSpan)) {
+                    let ismax = true;
+                    {
+                      let loop27start =I(1);
+                      let loop27step =(loop27start <= I(this.swingSpan)) ? 1 : -1;
+                      for(let k=loop27start; this.G() && (loop27step>0 ? k <= I(this.swingSpan) : k >= I(this.swingSpan)); k+=loop27step) {
+                        if((PLt(befmaxhigh, this.GethArr(I(PAdd(befmaxhighindex, k)))) || PLt(befmaxhigh, this.GethArr(I(PSub(befmaxhighindex, k)))))) {
+                          ismax = false;
+                        }
+                      }
+                    }
+                    if(PEq(ismax, true)) {
+                      this.st.yasuneflag = false;
+                    }
+                  }
+                }
+                if(PLt(this.st.maxhigh, this.GetcArr(I(idx)))) {
+                  this.st.trendDirection = I(1);
+                  this.st.minlow = this.GetlArr(I(idx));
+                  this.st.minlowindex = I(idx);
+                  this.st.takane = this.GethArr(I(idx));
+                  this.st.takaneindex = I(idx);
+                  this.st.yasuneflag = true;
+                  {
+                    let loop28start =I(idx);
+                    let loop28step =(loop28start <= I(this.st.maxhighindex)) ? 1 : -1;
+                    for(let k=loop28start; this.G() && (loop28step>0 ? k <= I(this.st.maxhighindex) : k >= I(this.st.maxhighindex)); k+=loop28step) {
+                      if(PGt(this.st.minlow, this.GetlArr(I(k)))) {
+                        this.st.minlow = this.GetlArr(I(k));
+                        this.st.minlowindex = I(k);
+                      }
+                    }
+                  }
+                  {
+                    let loop29start =I(idx);
+                    let loop29step =(loop29start <= I(this.st.minlowindex)) ? 1 : -1;
+                    for(let a=loop29start; this.G() && (loop29step>0 ? a <= I(this.st.minlowindex) : a >= I(this.st.minlowindex)); a+=loop29step) {
+                      let aa = I(PSub(PAdd(this.st.minlowindex, idx), a));
+                      if(PLt(this.st.takane, this.GethArr(I(aa)))) {
+                        this.st.takane = this.GethArr(I(aa));
+                        this.st.takaneindex = I(aa);
+                      }
+                    }
+                  }
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  Zones() {
+    this.iter = this.iter || 0;
+    this.st.Zonecount = I(0);
+    if(PGt(this.CountZigZagType(), 0)) {
+      {
+        let loop30start =I(0);
+        let loop30step =(loop30start <= I(PSub(this.CountZigZagType(), 1))) ? 1 : -1;
+        for(let r=loop30start; this.G() && (loop30step>0 ? r <= I(PSub(this.CountZigZagType(), 1)) : r >= I(PSub(this.CountZigZagType(), 1))); r+=loop30step) {
+          let zzIndex = I(I(this.GetZigZagIndex(I(r))));
+          if(PGt(zzIndex, this.zoneback)) {
+            continue;
+          }
+          let isUP = (PEq(this.st.trendDirection, 1) && PEq(this.GetZigZagType(I(r)), 1));
+          let isDown = (PEq(this.st.trendDirection, (-1)) && PEq(this.GetZigZagType(I(r)), (-1)));
+          if((PEq(isUP, false) && PEq(isDown, false))) {
+            continue;
+          }
+          let top = 0;
+          let bottom = 0;
+          let isBull = PGt(this.GetcArr(I(zzIndex)), this.GetoArr(I(zzIndex)));
+          if(isUP) {
+            top = this.GethArr(I(zzIndex));
+            bottom = (isBull ? this.GetcArr(I(zzIndex)) : this.GetoArr(I(zzIndex)));
+            this.st.zzIndex = I(zzIndex);
+          }
+          else if(isDown) {
+            bottom = this.GetlArr(I(zzIndex));
+            top = (isBull ? this.GetoArr(I(zzIndex)) : this.GetcArr(I(zzIndex)));
+            this.st.zzIndex = I(zzIndex);
+          }
+          let shouldDrawZone = false;
+          let firstTouchIndex = I((-1));
+          {
+            let loop31start =I(0);
+            let loop31step =(loop31start <= I(zzIndex)) ? 1 : -1;
+            for(let f=loop31start; this.G() && (loop31step>0 ? f <= I(zzIndex) : f >= I(zzIndex)); f+=loop31step) {
+              let ff = I(PAdd(PSub(zzIndex, f), 1));
+              if((PEq(isUP, true) && (PGt(this.GetoArr(I(ff)), top) || PGt(this.GetcArr(I(ff)), top)))) {
+                shouldDrawZone = true;
+                firstTouchIndex = ff;
+                break;
+              }
+              if((PEq(isDown, true) && (PLt(this.GetoArr(I(ff)), bottom) || PLt(this.GetcArr(I(ff)), bottom)))) {
+                shouldDrawZone = true;
+                firstTouchIndex = ff;
+                break;
+              }
+            }
+          }
+          if((!shouldDrawZone)) {
+            continue;
+          }
+          if(this.cfg.horizontal) {
+            if(PGt(firstTouchIndex, PSub(this.cfg.horizontalBars, 1))) {
+              continue;
+            }
+          }
+          let wasInvalidated = false;
+          {
+            let loop32start =I(0);
+            let loop32step =(loop32start <= I(firstTouchIndex)) ? 1 : -1;
+            for(let k=loop32start; this.G() && (loop32step>0 ? k <= I(firstTouchIndex) : k >= I(firstTouchIndex)); k+=loop32step) {
+              let kk = I(PSub(firstTouchIndex, k));
+              if(((isUP && PLt(this.GetlArr(I(kk)), bottom)) && PLt(this.GethArr(I(kk)), bottom))) {
+                wasInvalidated = true;
+                break;
+              }
+              if(((isDown && PGt(this.GethArr(I(kk)), top)) && PGt(this.GetlArr(I(kk)), top))) {
+                wasInvalidated = true;
+                break;
+              }
+            }
+          }
+          if(wasInvalidated) {
+            continue;
+          }
+          let zoneColor = (isUP ? this.cfg.zoneUp : this.cfg.zoneDown);
+          this.st.zzIndex = I(this.MapShift(zzIndex, (isUP ? top : bottom), isUP));
+          if(PEq(this.st.trendDirection, 1)) {
+          }
+          else if(PEq(this.st.trendDirection, (-1))) {
+          }
+          this.PushZoneIndex(this.st.zzIndex);
+          this.PushZoneTop(top);
+          this.PushZoneBottom(bottom);
+          this.PushZoneColor(zoneColor);
+          this.st.Zonecount += I(1);
+        }
+      }
+      let bestValue = (PEq(this.st.trendDirection, 1) ? 0 : 10000000000);
+      this.st.zzIndex = I(0);
+      this.st.Zonetop = NVAL;
+      this.st.Zonebottom = NVAL;
+      let zoneColor = 'green';
+      if(PGt(this.st.Zonecount, 0)) {
+        {
+          let loop33start =I(0);
+          let loop33step =(loop33start <= I(PSub(this.CountZoneIndex(), 1))) ? 1 : -1;
+          for(let s=loop33start; this.G() && (loop33step>0 ? s <= I(PSub(this.CountZoneIndex(), 1)) : s >= I(PSub(this.CountZoneIndex(), 1))); s+=loop33step) {
+            let ref = (PEq(this.st.trendDirection, 1) ? this.GetZoneTop(I(s)) : this.GetZoneBottom(I(s)));
+            if(((PEq(this.st.trendDirection, 1) && PGt(ref, bestValue)) || (PEq(this.st.trendDirection, (-1)) && PLt(ref, bestValue)))) {
+              bestValue = ref;
+              this.st.zzIndex = I(I(this.GetZoneIndex(I(s))));
+              this.st.Zonetop = this.GetZoneTop(I(s));
+              this.st.Zonebottom = this.GetZoneBottom(I(s));
+              zoneColor = (this.GetZoneColor(I(s)));
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/* =====================================================================
+ *  1画面分の GK_ZONE（計算・アラート・描画）
+ * ===================================================================== */
+class GKPanel {
+  constructor(panel){
+    this.p = panel; this.htf = {}; this.fetching = {}; this.model = null; this.seq = 0;
+    this.toastEl = document.createElement('div'); this.toastEl.className = 'gktoast hidden';
+    panel.el.querySelector('.pbody').appendChild(this.toastEl);
+    const self = this;
+    this.primitive = {
+      attached(p){ self.lc = p.chart; self.series = p.series; self.requestUpdate = p.requestUpdate; },
+      detached(){ self.requestUpdate = null; },
+      updateAllViews(){},
+      paneViews(){ return [{ zOrder(){ return 'normal'; }, renderer(){ return self.renderer; } }]; },
+    };
+    this.renderer = { draw:t=>this.draw(t, false), drawBackground:t=>this.draw(t, true) };
+    panel.candle.attachPrimitive(this.primitive);
+    this.reset();
+  }
+  on(){ return !!(indState.gk && indState.gk.on); }
+
+  // 設定・銘柄・時間足が変わったとき：最初から計算し直す
+  reset(){
+    this.seq++;
+    this.engines = [0,1,2].map(i=>new GKEngine(i));
+    this.started = false; this.currentBar = null; this.lastAlertBar = null; this.mainCounterFilter = true;
+    this.quiet = true;   // 読み込み直後の1回目はアラートを画面に出さない
+    this.htf = {}; this.fetching = {};
+    this.refresh();
+    this.loadHtf();
+  }
+  neededTfs(){
+    const s = gkSettings(), chartSec = TF_SEC[this.p.tf], out = new Set();
+    if (!this.on()) return [];
+    for (const ln of s.lanes) if (ln.enabled && ln.tf !== 'CUR' && TF_SEC[ln.tf] > chartSec) out.add(ln.tf);
+    return [...out];
+  }
+  async loadHtf(tfs){
+    const sym = this.p.sym; if (!sym || !G.src) return;
+    const seq = this.seq;
+    for (const tf of (tfs || this.neededTfs())){
+      if (this.fetching[tf]) continue;
+      this.fetching[tf] = true;
+      try{
+        const bars = await G.src.history(sym.key, tf, GK_KEEP + 8);
+        if (seq !== this.seq) return;
+        this.htf[tf] = bars;
+      }catch(e){}
+      finally{ if (seq === this.seq) this.fetching[tf] = false; }
+    }
+    if (seq === this.seq) this.p.schedule(false);
+  }
+  // チャートに新しい足ができたとき：区切りを越えた上位足を取り直す
+  onNewBar(t){
+    const due = [];
+    for (const tf of Object.keys(this.htf)){
+      const b = this.htf[tf]; if (!b || !b.length) continue;
+      if (t >= b[b.length-1].t + TF_SEC[tf]) due.push(tf);
+    }
+    if (due.length) this.loadHtf(due);
+  }
+
+  laneCfg(i){
+    const ln = gkSettings().lanes[i], chartSec = TF_SEC[this.p.tf];
+    const tf = ln.tf === 'CUR' ? this.p.tf : ln.tf;
+    return {
+      tf, minutes:(ln.tf === 'CUR' ? chartSec : TF_SEC[ln.tf]) / 60,
+      enabled:ln.enabled, showPullback:ln.pullback, showExtremes:ln.extremes, showZone:ln.zones,
+      useRange:ln.range, horizontal:ln.horizontal, horizontalBars:+ln.hbars || 50,
+      zoneAlert:ln.zoneAlert, lineAlert:ln.lineAlert, labels:ln.labels, fibo:ln.fibo,
+      up:GK_COLORS.up, down:GK_COLORS.down, zoneUp:GK_COLORS.zoneUp, zoneDown:GK_COLORS.zoneDown,
+      rangeColor:GK_COLORS.range, textColor:GK_COLORS.text, fiboColor:GK_COLORS.fibo, width:2, fiboWidth:1,
+    };
+  }
+
+  /* ---- 再計算（MT5版 Refresh に相当） ---- */
+  refresh(){
+    const bars = this.p.bars;
+    if (!this.on() || !this.p.sym || bars.length < 2){ this.model = null; this.update(); return; }
+    const now = bars[bars.length-1].t, chartSec = TF_SEC[this.p.tf];
+    if (this.started && this.currentBar !== now) this.engines.forEach(e=>e.commit());
+    this.currentBar = now; this.started = true;
+    const ctx = {chart:bars, chartSec, htf:this.htf};
+    for (const e of this.engines){
+      e.cfg = this.laneCfg(e.lane);
+      e.restore(); e.ready = false;
+      if (!e.loadHTF(ctx)) continue;
+      e.reanchor(now);
+      if (e.st.First || e.st.last_closed !== e.htf[0].t) e.Rebuild(now);
+      if (!e.dataError){ e.Realtime(); e.ready = true; e.status = 'OK'; }
+      else e.status = '価格・時刻の対応を確認できません';
+    }
+    const session = this.inSession();
+    for (let i = 0; i < 3; i++) this.processAlerts(i, session);
+    // 上位足がすべて揃って1回計算するまでは、読み込み時点の状態でアラートを出さない
+    if (!this.engines.some(e=>e.status.startsWith('上位足'))) this.quiet = false;
+    this.model = this.buildModel(session);
+    this.update();
+  }
+
+  inSession(){
+    const s = gkSettings(); if (!s.sessionOn) return true;
+    const ss = gkParseSession(s.session); if (!ss || ss.start === ss.end) return true;
+    const jst = this.currentBar - G.serverOffset + 9*3600;
+    const minute = Math.floor((((jst % 86400) + 86400) % 86400) / 60);
+    if (ss.start < ss.end) return minute >= ss.start && minute < ss.end;
+    return minute >= ss.start || minute < ss.end;
+  }
+  fire(msg){
+    // 1本の足につき1回だけ（元コードの alert.freq_once_per_bar と同じ）
+    if (this.lastAlertBar === this.currentBar) return;
+    this.lastAlertBar = this.currentBar;
+    if (this.quiet || !gkSettings().toast) return;
+    this.toastEl.textContent = '🔔 GK_ZONE ' + this.p.sym.name + ' ' + msg;
+    this.toastEl.classList.remove('hidden');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(()=>this.toastEl.classList.add('hidden'), 8000);
+  }
+
+  processAlerts(index, session){
+    const E = this.engines, e = E[index]; if (!e.ready) return;
+    const S = gkSettings(), v = e.st, c = e.cfg;
+    let inL = false, inS = false, lineL = false, lineS = false;
+    if (v.trendDirection === 1){
+      if (v.alerttakaneindex > 0){
+        v.alertlow = v.alerttakane;
+        for (let n = 0; n < v.alerttakaneindex; n++) if (PGt(v.alertlow, e.CL(n))) v.alertlow = e.CL(n);
+        if (index === 0){
+          // alertlowindex は元コードで代入されない（NAのまま）。その動作を維持
+          v.alertlowhigh = e.CH(v.alertlowindex);
+          for (let n = 0; n <= v.alertlowindex; n++) if (PLt(v.alertlowhigh, e.CH(n))) v.alertlowhigh = e.CH(n);
+        }
+        inL = PGe(v.Zonetop, v.alertlow);
+      }
+      v.osilow = v.takane;
+      for (let n = 0; n <= v.takaneindex; n++) if (PGt(v.osilow, e.CL(n))) v.osilow = e.CL(n);
+      lineL = PGe(v.minlow, v.osilow);
+    } else if (v.trendDirection === -1){
+      if (v.alertyasuneindex > 0){
+        v.alerthigh = v.alertyasune;
+        for (let n = 0; n < v.alertyasuneindex; n++) if (PLt(v.alerthigh, e.CH(n))) v.alerthigh = e.CH(n);
+        if (index === 0){
+          v.alerthighlow = e.CL(v.alerthighindex);
+          for (let n = 0; n <= v.alerthighindex; n++) if (PGt(v.alerthighlow, e.CL(n))) v.alerthighlow = e.CL(n);
+        }
+        inS = PLe(v.Zonebottom, v.alerthigh);
+      }
+      v.modosihigh = v.yasune;
+      for (let n = 0; n <= v.yasuneindex; n++) if (PLt(v.modosihigh, e.CH(n))) v.modosihigh = e.CH(n);
+      lineS = PLe(v.maxhigh, v.modosihigh);
+    }
+    const up = v.trendDirection === 1, down = v.trendDirection === -1;
+    let follow = true, counter = true, opposite = true;
+    if (index === 0 && (up || down)){
+      const d = up ? 1 : -1;
+      if (S.follow) follow = (S.follow2 && E[1].st.trendDirection === d) || (S.follow3 && E[2].st.trendDirection === d);
+      if (S.counterOff){
+        if (S.counter2 && S.counter3) counter = !(E[1].st.trendDirection === -d && E[2].st.trendDirection === -d);
+        else if (S.counter2) counter = E[1].st.trendDirection !== -d;
+        else if (S.counter3) counter = E[2].st.trendDirection !== -d;
+      }
+      if (S.oppOff) for (let k = 1; k < 3; k++){
+        if (!(k === 1 ? S.opp2 : S.opp3) || E[k].st.trendDirection !== -d) continue;
+        if (up && PGe(v.alerttakane, E[k].st.Zonebottom) && PLe(v.alertlowhigh, E[k].st.Zonetop)) opposite = false;
+        if (down && PLe(v.alertyasune, E[k].st.Zonetop) && PGe(v.alerthighlow, E[k].st.Zonebottom)) opposite = false;
+      }
+    }
+    const tfText = gkTFText(c.minutes);
+    if (up){
+      if (PNe(v.alerttakane, v.prevTakane)){ v.alertedL = false; v.prevTakane = v.alerttakane; }
+      if (PNe(v.Zonetop, v.prevAlertTop)){ v.alertedL = false; v.prevAlertTop = v.Zonetop; }
+      if (v.Zonecount === 0) v.alertedL = false;
+      const shallow = !S.shallow || PGe(v.fibo382, v.alertlow) || PGe(v.zoneharf, v.alertlow);
+      if (inL && shallow && session && follow && counter && opposite && !v.alertedL){
+        v.alertedL = true; v.prevTakane = v.alerttakane; v.prevAlertTop = v.Zonetop;
+        if (c.zoneAlert) this.fire(tfText + '上昇ZONE');
+      }
+      if (PNe(v.minlow, v.prevAlertminlow)){ v.alertedlineL = false; v.prevAlertminlow = v.minlow; }
+      if (lineL && !v.alertedlineL && c.lineAlert && session && follow && counter && opposite){
+        v.alertedlineL = true; v.prevAlertminlow = v.minlow; this.fire(tfText + '上昇押し安値');
+      }
+    } else if (down){
+      if (PNe(v.alertyasune, v.prevYasune)){ v.alertedS = false; v.prevYasune = v.alertyasune; }
+      if (PNe(v.Zonebottom, v.prevAlertBottom)){ v.alertedS = false; v.prevAlertBottom = v.Zonebottom; }
+      if (v.Zonecount === 0) v.alertedS = false;
+      const shallow = !S.shallow || PLe(v.fibo382, v.alerthigh) || PLe(v.zoneharf, v.alerthigh);
+      if (inS && shallow && session && follow && counter && opposite && !v.alertedS){
+        v.alertedS = true; v.prevYasune = v.alertyasune; v.prevAlertBottom = v.Zonebottom;
+        if (c.zoneAlert) this.fire(tfText + '下降ZONE');
+      }
+      if (PNe(v.maxhigh, v.prevAlertmaxhigh)){ v.alertedlineS = false; v.prevAlertmaxhigh = v.maxhigh; }
+      if (lineS && !v.alertedlineS && c.lineAlert && session && follow && counter && opposite){
+        v.alertedlineS = true; v.prevAlertmaxhigh = v.maxhigh; this.fire(tfText + '下降戻り高値');
+      }
+    }
+    if (index === 0) this.mainCounterFilter = counter;
+  }
+
+  /* ---- 描画内容を組み立てる（MT5版 RenderLane / RenderPanel / RenderWatermark） ---- */
+  buildModel(session){
+    const S = gkSettings(), m = {lines:[], boxes:[], texts:[], rows:[], wm:null};
+    const last = this.p.bars.length - 1;
+    this.engines.forEach((e, index)=>{
+      const v = e.st, c = e.cfg;
+      if (!c.enabled || !e.ready) return;
+      const up = v.trendDirection === 1, down = v.trendDirection === -1, rng = v.trendDirection === 99;
+      const lineColor = up ? c.up : c.down, tfText = gkTFText(c.minutes);
+      const labelLi = last + (index === 0 ? 7 : (index === 1 ? -8 : -23));
+      const textColor = gkAlpha(c.textColor, 50);
+      if ((up || down) && c.showExtremes)
+        m.lines.push({li:e.logical(up ? v.takaneindex : v.yasuneindex), price:up ? v.takane : v.yasune, color:lineColor, width:c.width, ray:true});
+      if ((up || down) && c.showPullback){
+        const price = up ? v.minlow : v.maxhigh;
+        m.lines.push({li:e.logical(up ? v.minlowindex : v.maxhighindex), price, color:lineColor, width:c.width, ray:true});
+        if (c.labels) m.texts.push({li:labelLi, price, text:tfText + (up ? '押し' : '戻し'), color:textColor});
+      }
+      if (rng && c.useRange){
+        const right = e.rangeRightT != null ? e.shiftOfTime(e.rangeRightT) : 0;
+        m.boxes.push({li:e.logical(v.rangeindex), li2:right == null ? null : (last - right) + 1,
+                      top:v.rangetop, bottom:v.rangebottom, color:gkAlpha(c.rangeColor, 50)});
+      }
+      if ((up || down) && c.showZone && v.Zonecount > 0){
+        m.boxes.push({li:e.logical(v.zzIndex), li2:null, top:v.Zonetop, bottom:v.Zonebottom, color:gkAlpha(up ? c.zoneUp : c.zoneDown, 80)});
+        if (c.labels) m.texts.push({li:labelLi, price:v.Zonebottom, text:tfText, color:textColor});
+      }
+      if (c.fibo && (up || down) && v.Zonecount > 0){
+        const fr = [0,0.382,0.5,0.618,0.786,1], lb = ['0','0.382','0.5','0.618','0.786','1'];
+        const start = e.logical(up ? v.fiboosiindex : v.fibomodosiindex), fc = gkAlpha(c.fiboColor, 50);
+        fr.forEach((f,k)=>{
+          const price = up ? v.alerttakane - (v.alerttakane - v.fiboosi) * f : v.alertyasune + (v.fibomodosi - v.alertyasune) * f;
+          m.lines.push({li:start, li2:last, price, color:fc, width:c.fiboWidth, ray:false});
+          m.texts.push({li:start, price, text:lb[k], color:fc});
+        });
+      }
+    });
+    if (S.panel){
+      this.engines.forEach((e, i)=>{
+        const v = e.st, d = v.trendDirection, tfText = gkTFText(e.cfg.minutes || TF_SEC[this.p.tf]/60);
+        const trend = d === 1 ? '上昇' : d === -1 ? '下降' : d === 99 ? 'レンジ' : 'NONE';
+        let color = d === 1 ? GK_COLORS.panelUp : d === -1 ? GK_COLORS.panelDown : d === 99 ? GK_COLORS.panelRange : GK_COLORS.panelNone;
+        let zone = d === 99 ? '↗↘↗' : (session && d === 1 && v.alertedL ? '↑↑↑' : (session && d === -1 && v.alertedS ? '↓↓↓' : 'NONE'));
+        if (i === 0 && !this.mainCounterFilter && d !== 99) zone = 'NONE';
+        let text = `${tfText}   ダウ: ${trend}   ZONE: ${zone}`, short = `${tfText} ${trend} ${zone === 'NONE' ? '-' : zone}`;
+        if (!e.ready){
+          text = `${tfText}   ${e.status}`; color = GK_COLORS.panelNone;
+          short = `${tfText} ${e.status === 'OFF' ? 'OFF' : e.status.startsWith('設定足') ? '対象外' : '待機中'}`;
+        }
+        m.rows.push({text, short, color});
+      });
+    }
+    if (S.watermark){
+      let up = true, down = true, rng = false;
+      for (const e of this.engines){ if (!e.ready) continue; const d = e.st.trendDirection; up = up && d === 1; down = down && d === -1; rng = rng || d === 99; }
+      const col = rng ? GK_COLORS.wmRange : up ? GK_COLORS.wmUp : down ? GK_COLORS.wmDown : GK_COLORS.wmNeutral;
+      m.wm = gkAlpha(col, rng || up || down ? 50 : 80);
+    }
+    return m;
+  }
+
+  update(){ if (this.requestUpdate) this.requestUpdate(); }
+
+  draw(target, background){
+    const m = this.model; if (!m || !this.lc) return;
+    target.useMediaCoordinateSpace(({context:ctx, mediaSize})=>{
+      const ts = this.lc.timeScale(), W = mediaSize.width, H = mediaSize.height;
+      const X = li => li == null || IsNA(li) ? null : ts.logicalToCoordinate(li);
+      const Y = p => IsNA(p) ? null : this.series.priceToCoordinate(p);
+      const small = W < 420, tiny = W < 300;
+      if (background){
+        if (m.wm){
+          ctx.save(); ctx.fillStyle = m.wm; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.font = `bold ${tiny ? 18 : small ? 26 : 40}px sans-serif`; ctx.fillText('GK_ZONE', W/2, H/2); ctx.restore();
+        }
+        for (const b of m.boxes){
+          const x1 = X(b.li), y1 = Y(b.top), y2 = Y(b.bottom); if (x1 == null || y1 == null || y2 == null) continue;
+          const x2 = b.li2 == null ? W : X(b.li2); if (x2 == null) continue;
+          ctx.fillStyle = b.color; ctx.fillRect(Math.min(x1,x2), Math.min(y1,y2), Math.abs(x2-x1), Math.max(1, Math.abs(y2-y1)));
+        }
+        return;
+      }
+      for (const l of m.lines){
+        const x1 = X(l.li), y = Y(l.price); if (x1 == null || y == null) continue;
+        const x2 = l.ray ? W : X(l.li2); if (x2 == null) continue;
+        ctx.strokeStyle = l.color; ctx.lineWidth = l.width; ctx.beginPath();
+        const yy = Math.round(y) + (l.width % 2 ? 0.5 : 0);
+        ctx.moveTo(x1, yy); ctx.lineTo(x2, yy); ctx.stroke();
+      }
+      ctx.font = `${small ? 10 : 12}px sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      for (const t of m.texts){
+        const x = X(t.li), y = Y(t.price); if (x == null || y == null) continue;
+        ctx.fillStyle = t.color; ctx.fillText(t.text, x, y);
+      }
+      if (m.rows.length){
+        const fs = small ? 10 : 12, lh = fs + 6;
+        ctx.font = `${fs}px sans-serif`; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+        const useShort = m.rows.some(r=>ctx.measureText(r.text).width > W - 70);
+        m.rows.forEach((row, i)=>{
+          const r = {text: useShort ? row.short : row.text, color: row.color};
+          const y = H - 8 - (m.rows.length - 1 - i) * lh;
+          ctx.fillStyle = 'rgba(15,17,21,.75)';
+          const w = ctx.measureText(r.text).width; ctx.fillRect(W - 10 - w - 4, y - fs - 3, w + 8, fs + 6);
+          ctx.fillStyle = r.color; ctx.fillText(r.text, W - 10, y);
+        });
+      }
+    });
+  }
+}
+
+/* ---------- GK_ZONE の詳細設定（指標画面の中） ---------- */
+function gkBuildSettings(box, onChange){
+  const S = gkSettings();
+  const wrap = document.createElement('details'); wrap.className = 'gkset';
+  wrap.innerHTML = '<summary>詳細設定</summary>';
+  const chk = (obj, key, label) => {
+    const l = document.createElement('label'); l.className = 'chip';
+    const c = document.createElement('input'); c.type = 'checkbox'; c.checked = !!obj[key];
+    c.onchange = ()=>{ obj[key] = c.checked; gkSave(); onChange(); };
+    l.append(c, document.createTextNode(label)); return l;
+  };
+  const names = ['第1系統','第2系統','第3系統'];
+  S.lanes.forEach((ln, i)=>{
+    const fs = document.createElement('fieldset'); fs.innerHTML = `<legend>${names[i]}</legend>`;
+    const head = document.createElement('div'); head.className = 'gkrow';
+    const tfl = document.createElement('label'); tfl.className = 'chip'; tfl.textContent = '時間足 ';
+    const sel = document.createElement('select');
+    for (const tf of GK_TFS){ const o = document.createElement('option'); o.value = tf; o.textContent = tf === 'CUR' ? '現在足' : tf; sel.appendChild(o); }
+    sel.value = ln.tf; sel.onchange = ()=>{ ln.tf = sel.value; gkSave(); onChange(); };
+    tfl.appendChild(sel);
+    head.append(tfl, chk(ln,'enabled','表示'));
+    const row = document.createElement('div'); row.className = 'gkrow';
+    row.append(chk(ln,'extremes','高値/安値'), chk(ln,'pullback','押し安値/戻り高値'), chk(ln,'zones','ZONE'),
+               chk(ln,'range','レンジ'), chk(ln,'fibo','フィボナッチ'), chk(ln,'labels','ラベル'),
+               chk(ln,'zoneAlert','ZONEアラート'), chk(ln,'lineAlert','ラインアラート'));
+    const hz = document.createElement('div'); hz.className = 'gkrow';
+    const hb = document.createElement('label'); hb.className = 'chip'; hb.textContent = '水平 本数 ';
+    const hi = document.createElement('input'); hi.type = 'number'; hi.min = 1; hi.value = ln.hbars; hi.inputMode = 'numeric';
+    hi.onchange = ()=>{ const v = parseInt(hi.value, 10); if (!(v > 0)){ hi.value = ln.hbars; return; } ln.hbars = v; gkSave(); onChange(); };
+    hb.appendChild(hi);
+    hz.append(chk(ln,'horizontal','水平（ZONEを直近の本数内に限定）'), hb);
+    fs.append(head, row, hz); wrap.appendChild(fs);
+  });
+  const fa = document.createElement('fieldset'); fa.innerHTML = '<legend>アラート条件（元コードと同じ）</legend>';
+  const r1 = document.createElement('div'); r1.className = 'gkrow';
+  r1.append(chk(S,'shallow','ゾーンアラートフィルター'));
+  const r2 = document.createElement('div'); r2.className = 'gkrow';
+  r2.append(chk(S,'follow','第1系統の順張りアラートON'), chk(S,'follow2','第2系統'), chk(S,'follow3','第3系統'));
+  const r3 = document.createElement('div'); r3.className = 'gkrow';
+  r3.append(chk(S,'counterOff','第1系統の逆張りアラートOFF'), chk(S,'counter2','第2系統'), chk(S,'counter3','第3系統'));
+  const r4 = document.createElement('div'); r4.className = 'gkrow';
+  r4.append(chk(S,'oppOff','反対ZONE内アラートOFF'), chk(S,'opp2','第2系統'), chk(S,'opp3','第3系統'));
+  const r5 = document.createElement('div'); r5.className = 'gkrow';
+  const sl = document.createElement('label'); sl.className = 'chip'; sl.textContent = '時間帯（日本時間） ';
+  const si = document.createElement('input'); si.type = 'text'; si.value = S.session; si.className = 'gksess'; si.placeholder = '0900-0000';
+  si.onchange = ()=>{ if (!gkParseSession(si.value.trim())){ si.value = S.session; return; } S.session = si.value.trim(); gkSave(); onChange(); };
+  sl.appendChild(si);
+  r5.append(chk(S,'sessionOn','時間帯で絞る'), sl);
+  fa.append(r1, r2, r3, r4, r5); wrap.appendChild(fa);
+  const fd = document.createElement('fieldset'); fd.innerHTML = '<legend>表示</legend>';
+  const r6 = document.createElement('div'); r6.className = 'gkrow';
+  r6.append(chk(S,'panel','情報パネル'), chk(S,'watermark','背景文字'), chk(S,'toast','画面内アラート'));
+  const rs = document.createElement('div'); rs.className = 'gkrow';
+  const rb = document.createElement('button'); rb.textContent = '初期設定に戻す';
+  rb.onclick = ()=>{ GKS = JSON.parse(JSON.stringify(GK_DEFAULTS)); gkSave(); onChange(); buildIndList(); };
+  rs.appendChild(rb);
+  fd.append(r6, rs); wrap.appendChild(fd);
+  box.appendChild(wrap);
+}
+
 /* =====================================================================
  *  以下はアプリ本体（通常は編集不要）
  * ===================================================================== */
+const MAX_PANELS  = 4;
+const DEFAULT_TFS = ['M15','H1','H4','D1'];   // 各画面の最初の時間足
+
 const $ = id => document.getElementById(id);
 const store = {
   get(k, d){ try{ const v = localStorage.getItem('xmchart.'+k); return v == null ? d : JSON.parse(v); }catch(e){ return d; } },
   set(k, v){ try{ localStorage.setItem('xmchart.'+k, JSON.stringify(v)); }catch(e){} },
 };
 
-const state = {
-  db:'', demo:false, src:null, symbols:[], sym:null,
-  tf: store.get('tf','M15'), tz: store.get('tz','jst'),
-  bars:[], digits:3, serverOffset:7200, lastBeat:0, conn:true,
-  stopLive:null, loadSeq:0, statusTimer:null, indLines:[], markersKey:'', paneCount:1, symbolsRev:null, quote:null, askLine:null,
+// 全画面共通の状態
+const G = {
+  db:'', demo:false, src:null, symbols:[],
+  tz: store.get('tz','jst'), layout: store.get('layout',1), link: store.get('link',true), maxIdx:-1,
+  serverOffset:7200, lastBeat:0, conn:true, statusTimer:null, symbolsRev:null,
+  paneCfg: null,
 };
+(function initPaneCfg(){
+  let cfg = store.get('panes', null);
+  if (!Array.isArray(cfg)) cfg = [];
+  for (let i = 0; i < MAX_PANELS; i++){
+    cfg[i] = Object.assign({sym:null, tf:DEFAULT_TFS[i]}, cfg[i] || {});
+    if (!TIMEFRAMES.includes(cfg[i].tf)) cfg[i].tf = DEFAULT_TFS[i];
+  }
+  // 1画面版の設定を引き継ぐ
+  if (!store.get('panes', null)){ cfg[0].tf = store.get('tf', cfg[0].tf); cfg[0].sym = store.get('sym', null); }
+  G.paneCfg = cfg;
+})();
+function savePaneCfg(){ store.set('panes', G.paneCfg); }
+
 const indState = {};
 (function initIndState(){
   const saved = store.get('ind', {});
@@ -258,7 +1646,7 @@ const indState = {};
 
 /* ---------- データの取得元：Firebase ---------- */
 const Firebase = {
-  url(path, q){ return state.db.replace(/\/+$/,'') + path + '.json' + (q ? '?' + q : ''); },
+  url(path, q){ return G.db.replace(/\/+$/,'') + path + '.json' + (q ? '?' + q : ''); },
   async get(path, q){
     const r = await fetch(this.url(path, q), {cache:'no-store'});
     if (r.status === 401) throw new Error('読み取りが許可されていません（データベースのルールを確認）');
@@ -276,218 +1664,438 @@ const Firebase = {
     return Object.keys(obj).map(k=>{ const a = obj[k]; return {t:+k, o:+a[0], h:+a[1], l:+a[2], c:+a[3], v:+(a[4]||0)}; })
       .filter(b=>isFinite(b.t) && isFinite(b.c)).sort((a,b)=>a.t-b.t);
   },
-  live(key, tf, onBar, onReconnect){
-    const es = new EventSource(this.url(`/live/${key}/${tf}`));
-    let cur = null, hadError = false;
-    const apply = (ev, isPatch) => {
+  subscribe(key, tf, onBar, onReconnect){ return Hub.subscribe(key, tf, onBar, onReconnect); },
+  closeAll(){ Hub.closeAll(); },
+};
+
+/* ---------- リアルタイム受信（銘柄ごとに接続を1本にまとめる） ----------
+ * 同じ銘柄を1つの時間足だけで見ているときは live/銘柄/時間足 を、
+ * 複数の時間足で見ているときは live/銘柄 をまとめて受信します。 */
+const Hub = {
+  streams:{},
+  subscribe(key, tf, onBar, onReconnect){
+    const st = this.streams[key] || (this.streams[key] = {subs:new Set(), tree:{}, es:null, want:undefined, hadError:false});
+    const sub = {tf, onBar, onReconnect}; st.subs.add(sub);
+    this.sync(key);
+    if (st.tree[tf]) setTimeout(()=>this.emit(sub, st.tree[tf]), 0);
+    return ()=>{ st.subs.delete(sub); this.sync(key); };
+  },
+  emit(sub, o){
+    if (!o || !o.t) return;
+    sub.onBar({t:+o.t, o:+o.o, h:+o.h, l:+o.l, c:+o.c, v:+(o.v||0)}, o.a != null ? {b:+o.b, a:+o.a, sp:+o.sp} : null);
+  },
+  sync(key){
+    const st = this.streams[key]; if (!st) return;
+    const tfs = [...new Set([...st.subs].map(s=>s.tf))];
+    const want = tfs.length === 0 ? null : tfs.length === 1 ? '/' + tfs[0] : '';
+    if (st.want === want) return;
+    if (st.es){ st.es.close(); st.es = null; }
+    st.want = want;
+    if (want === null){ delete this.streams[key]; return; }
+    const es = new EventSource(Firebase.url(`/live/${key}${want}`)); st.es = es;
+    const handle = (ev, isPatch) => {
       let msg; try{ msg = JSON.parse(ev.data); }catch(e){ return; }
       if (!msg) return;
-      const path = msg.path || '/', data = msg.data;
-      if (path === '/') cur = isPatch ? Object.assign(cur || {}, data) : data;
-      else { cur = cur || {}; cur[path.replace(/^\//,'')] = data; }
-      if (cur && cur.t) onBar({t:+cur.t, o:+cur.o, h:+cur.h, l:+cur.l, c:+cur.c, v:+(cur.v||0)},
-                              cur.a != null ? {b:+cur.b, a:+cur.a, sp:+cur.sp} : null);
+      const segs = (want + (msg.path === '/' ? '' : msg.path)).split('/').filter(Boolean);
+      const data = msg.data;
+      let touched;
+      if (isPatch && data && typeof data === 'object'){
+        for (const k of Object.keys(data)) setPath(st, [...segs, k], data[k]);
+        touched = segs.length ? [segs[0]] : Object.keys(data);
+      } else {
+        setPath(st, segs, data);
+        touched = segs.length ? [segs[0]] : Object.keys(st.tree);
+      }
+      for (const sub of st.subs) if (touched.includes(sub.tf)) this.emit(sub, st.tree[sub.tf]);
     };
-    es.addEventListener('put',   e=>apply(e,false));
-    es.addEventListener('patch', e=>apply(e,true));
-    es.addEventListener('cancel', ()=>showMsg('リアルタイム更新が拒否されました（データベースのルールを確認）'));
-    es.onerror = ()=>{ hadError = true; setConn(false); };
-    es.onopen  = ()=>{ setConn(true); if (hadError){ hadError = false; onReconnect(); } };
-    return ()=>es.close();
+    es.addEventListener('put',   e=>handle(e,false));
+    es.addEventListener('patch', e=>handle(e,true));
+    es.addEventListener('cancel', ()=>showGlobalMsg('リアルタイム更新が拒否されました（データベースのルールを確認）'));
+    es.onerror = ()=>{ st.hadError = true; setConn(false); };
+    es.onopen  = ()=>{ setConn(true); if (st.hadError){ st.hadError = false; for (const s of st.subs) s.onReconnect(); } };
   },
+  closeAll(){ for (const k of Object.keys(this.streams)){ const st = this.streams[k]; if (st.es) st.es.close(); } this.streams = {}; },
 };
+function setPath(st, segs, val){
+  if (!segs.length){ st.tree = (val && typeof val === 'object') ? val : {}; return; }
+  let o = st.tree;
+  for (let i = 0; i < segs.length - 1; i++){
+    if (!o[segs[i]] || typeof o[segs[i]] !== 'object') o[segs[i]] = {};
+    o = o[segs[i]];
+  }
+  const last = segs[segs.length-1];
+  if (val === null) delete o[last]; else o[last] = val;
+}
 
-/* ---------- データの取得元：デモ（ランダムな値動き） ---------- */
+/* ---------- データの取得元：デモ（ランダムな値動き） ----------
+ * 1分足を1本の系列として作り、各時間足はそこから集計（MT5と同じく時間足どうしの値が一致する） */
 const Demo = {
   syms:[
-    {key:'USDJPY', name:'USDJPY', digits:3, base:154.20, vol:0.020},
-    {key:'EURUSD', name:'EURUSD', digits:5, base:1.0845, vol:0.00012},
-    {key:'GBPJPY', name:'GBPJPY', digits:3, base:196.50, vol:0.030},
-    {key:'GOLD',   name:'GOLD',   digits:2, base:2650.0, vol:0.90},
+    {key:'USDJPY', name:'USDJPY', digits:3, base:154.20, vol:0.012},
+    {key:'EURUSD', name:'EURUSD', digits:5, base:1.0845, vol:0.00008},
+    {key:'GBPJPY', name:'GBPJPY', digits:3, base:196.50, vol:0.018},
+    {key:'GOLD',   name:'GOLD',   digits:2, base:2650.0, vol:0.55},
   ],
-  offset:7200, last:{},
+  DAYS:120, offset:7200, base:{}, timers:new Set(),
   rng(seed){ return ()=>{ seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed>>>15, 1|seed);
     t = t + Math.imul(t ^ t>>>7, 61|t) ^ t; return ((t ^ t>>>14)>>>0)/4294967296; }; },
+  nowMin(){ return Math.floor((Date.now()/1000 + this.offset)/60)*60; },
+  round(v, d){ const k = Math.pow(10, d); return Math.round(v*k)/k; },
+  ensure(key){
+    const s = this.syms.find(x=>x.key===key), now = this.nowMin();
+    let B = this.base[key];
+    if (!B){
+      const n = this.DAYS*1440, r = this.rng([...key].reduce((a,c)=>a*31+c.charCodeAt(0),7));
+      B = this.base[key] = {t0: now - (n-1)*60, o:[], h:[], l:[], c:[], r, s};
+      let p = s.base, drift = 0;
+      for (let i = 0; i < n; i++){
+        if (i % 600 === 0) drift = (r()-0.5)*s.vol*0.35;
+        const o = p, c = o + drift + (r()-0.5)*s.vol*2;
+        B.o.push(o); B.c.push(c); B.h.push(Math.max(o,c) + r()*s.vol*0.6); B.l.push(Math.min(o,c) - r()*s.vol*0.6); p = c;
+      }
+      const adj = s.base - B.c[n-1];
+      for (let i = 0; i < n; i++){
+        B.o[i] = this.round(B.o[i]+adj, s.digits); B.h[i] = this.round(B.h[i]+adj, s.digits);
+        B.l[i] = this.round(B.l[i]+adj, s.digits); B.c[i] = this.round(B.c[i]+adj, s.digits);
+      }
+    }
+    while (B.t0 + (B.c.length-1)*60 < now){ const c = B.c[B.c.length-1]; B.o.push(c); B.h.push(c); B.l.push(c); B.c.push(c); }
+    return B;
+  },
+  aggregate(key, tf, n){
+    const B = this.ensure(key), sec = TF_SEC[tf], out = [];
+    let cur = null;
+    for (let i = B.c.length-1; i >= 0; i--){
+      const t = B.t0 + i*60, bt = Math.floor(t/sec)*sec;
+      if (!cur || cur.t !== bt){
+        if (cur){ out.push(cur); if (out.length >= n){ cur = null; break; } }
+        cur = {t:bt, o:B.o[i], h:B.h[i], l:B.l[i], c:B.c[i], v:1};
+      } else { cur.o = B.o[i]; cur.h = Math.max(cur.h, B.h[i]); cur.l = Math.min(cur.l, B.l[i]); cur.v++; }
+    }
+    if (cur && out.length < n) out.push(cur);
+    return out.reverse();
+  },
   async symbols(){ return this.syms; },
   async status(){ return {updated: Math.floor(Date.now()/1000), serverOffset: this.offset}; },
-  async history(key, tf, n){
-    const s = this.syms.find(x=>x.key===key), sec = TF_SEC[tf], r = this.rng([...key+tf].reduce((a,c)=>a*31+c.charCodeAt(0),7));
-    const now = Math.floor(Date.now()/1000) + this.offset, start = Math.floor(now/sec)*sec - (n-1)*sec;
-    const step = s.vol * Math.sqrt(sec/60), bars = []; let p = s.base;
-    for (let i = 0; i < n; i++){
-      const o = p, drift = (r()-0.5)*step*2 + Math.sin(i/40)*step*0.15;
-      const c = o + drift, h = Math.max(o,c) + r()*step*0.6, l = Math.min(o,c) - r()*step*0.6;
-      bars.push({t:start+i*sec, o, h, l, c, v:Math.floor(r()*500)}); p = c;
-    }
-    const adj = s.base - bars[bars.length-1].c;
-    for (const b of bars){ b.o+=adj; b.h+=adj; b.l+=adj; b.c+=adj; }
-    this.last[key+tf] = {...bars[bars.length-1]};
-    return bars;
-  },
-  live(key, tf, onBar){
-    const s = this.syms.find(x=>x.key===key), sec = TF_SEC[tf], r = this.rng(Date.now() & 0xffff);
+  async history(key, tf, n){ return this.aggregate(key, tf, n); },
+  subscribe(key, tf, onBar){
+    const s = this.syms.find(x=>x.key===key);
     const id = setInterval(()=>{
-      let b = this.last[key+tf]; if (!b) return;
-      const now = Math.floor(Date.now()/1000) + this.offset, t = Math.floor(now/sec)*sec;
-      if (t > b.t) b = {t, o:b.c, h:b.c, l:b.c, c:b.c, v:0};
-      const c = b.c + (r()-0.5)*s.vol*1.5;
-      b = {...b, c, h:Math.max(b.h,c), l:Math.min(b.l,c), v:b.v+1};
-      this.last[key+tf] = b;
-      const sp = Math.round((s.digits === 3 || s.digits === 5 ? 12 : 25) + r()*6);
-      onBar({...b}, {b:c, a:c + sp*Math.pow(10,-s.digits), sp});
+      const B = this.ensure(key), L = B.c.length-1;
+      const c = this.round(B.c[L] + (B.r()-0.5)*s.vol*0.8, s.digits);
+      B.c[L] = c; B.h[L] = Math.max(B.h[L], c); B.l[L] = Math.min(B.l[L], c);
+      const bar = this.aggregate(key, tf, 1)[0];
+      const sp = Math.round((s.digits === 3 || s.digits === 5 ? 12 : 25) + B.r()*6);
+      onBar(bar, {b:c, a:this.round(c + sp*Math.pow(10,-s.digits), s.digits), sp});
     }, 700);
-    return ()=>clearInterval(id);
+    this.timers.add(id);
+    return ()=>{ clearInterval(id); this.timers.delete(id); };
   },
+  closeAll(){ for (const id of this.timers) clearInterval(id); this.timers.clear(); },
 };
 
-/* ---------- チャート ---------- */
+/* ---------- 共通の部品 ---------- */
 const LC = LightweightCharts;
-const chart = LC.createChart($('chart'), {
+const CHART_OPTS = {
   autoSize:true,
   layout:{ background:{type:'solid', color:'#0f1115'}, textColor:'#aab2c0', fontSize:11,
     panes:{ separatorColor:'#262b36', separatorHoverColor:'rgba(59,130,246,.25)', enableResize:true } },
   grid:{ vertLines:{color:'#1a1e27'}, horzLines:{color:'#1a1e27'} },
-  rightPriceScale:{ borderColor:'#262b36', scaleMargins:{top:0.06, bottom:0.06} },
-  timeScale:{ borderColor:'#262b36', timeVisible:true, secondsVisible:false, rightOffset:6 },
+  rightPriceScale:{ borderColor:'#262b36', scaleMargins:{top:0.08, bottom:0.06} },
+  timeScale:{ borderColor:'#262b36', timeVisible:true, secondsVisible:false, rightOffset:12 },
   crosshair:{ mode: LC.CrosshairMode.Normal },
   localization:{ locale:'ja-JP', dateFormat:'yyyy/MM/dd' },
-});
-const candle = chart.addSeries(LC.CandlestickSeries, {
-  upColor:'#26a69a', downColor:'#ef5350', borderVisible:false, wickUpColor:'#26a69a', wickDownColor:'#ef5350',
-});
-const markerApi = LC.createSeriesMarkers(candle, []);
-const indSeries = {};   // 'id:key' → series
-
-// サーバー時間 → 表示時刻（日足は日付がずれないようサーバー時間のまま）
-function disp(t){ return state.tz === 'jst' && TF_SEC[state.tf] < 86400 ? t - state.serverOffset + JST : t; }
-function toCandle(b){ return {time:disp(b.t), open:b.o, high:b.h, low:b.l, close:b.c}; }
-
+};
+const CANDLE_OPTS = { upColor:'#26a69a', downColor:'#ef5350', borderVisible:false, wickUpColor:'#26a69a', wickDownColor:'#ef5350' };
 function priceFormat(prec){ return {type:'price', precision:prec, minMove:Math.pow(10,-prec)}; }
-
-function render(full){
-  const bars = state.bars;
-  if (!bars.length){
-    candle.setData([]); markerApi.setMarkers([]); state.markersKey = ''; state.indLines = [];
-    for (const k of Object.keys(indSeries)){ chart.removeSeries(indSeries[k]); delete indSeries[k]; }
-    updateLegend(null); return;
-  }
-  if (full){
-    const range = chart.timeScale().getVisibleLogicalRange();
-    candle.setData(bars.map(toCandle));
-    if (range && !render.fresh) chart.timeScale().setVisibleLogicalRange(range);
-  } else {
-    candle.update(toCandle(bars[bars.length-1]));
-  }
-  renderIndicators(full);
-  updateLegend(null);
-}
-
-function renderIndicators(full){
-  const bars = state.bars, n = bars.length, used = new Set(), markers = [];
-  state.indLines = [];
-  for (const ind of INDICATORS){
-    const st = indState[ind.id]; if (!st.on) continue;
-    let res; try{ res = ind.compute(bars, st.p, TA) || {}; }catch(e){ console.error(ind.name, e); continue; }
-    for (const ln of res.lines || []){
-      const k = ind.id + ':' + ln.key; used.add(k);
-      let s = indSeries[k], created = false;
-      if (!s){
-        // 下段の指標は、指標ごとに専用の段（ペイン）を作る
-        let pane = 0, firstInPane = false;
-        if (ind.pane === 'sub'){
-          const sib = Object.keys(indSeries).find(x=>x.startsWith(ind.id + ':'));
-          if (sib) pane = indSeries[sib].getPane().paneIndex();
-          else { pane = chart.panes().length; firstInPane = true; }
-        }
-        s = chart.addSeries(LC.LineSeries, {
-          color:ln.color, lineWidth:ln.width || 2, lineStyle:ln.style || 0,
-          priceFormat: priceFormat(ln.precision ?? state.digits),
-          lastValueVisible: ind.pane === 'sub', priceLineVisible:false, crosshairMarkerVisible:false,
-        }, pane);
-        if (firstInPane)
-          for (const lv of ind.levels || []) s.createPriceLine({price:lv, color:'#4a5160', lineWidth:1, lineStyle:2, axisLabelVisible:false});
-        indSeries[k] = s; created = true;
-      }
-      const vals = ln.values;
-      if (full || created || ind.repaint){
-        const data = [];
-        for (let i = 0; i < n; i++) data.push(vals[i] == null || !isFinite(vals[i]) ? {time:disp(bars[i].t)} : {time:disp(bars[i].t), value:vals[i]});
-        s.setData(data);
-      } else if (vals[n-1] != null && isFinite(vals[n-1])){
-        s.update({time:disp(bars[n-1].t), value:vals[n-1]});
-      }
-      state.indLines.push({name:ln.name, color:ln.color, values:vals, prec:ln.precision ?? state.digits});
-    }
-    for (const m of res.markers || []){
-      if (m.index < 0 || m.index >= n) continue;
-      markers.push({time:disp(bars[m.index].t), position:m.position || 'aboveBar', shape:m.shape || 'circle', color:m.color || '#fff', text:m.text || ''});
-    }
-  }
-  for (const k of Object.keys(indSeries)) if (!used.has(k)){ chart.removeSeries(indSeries[k]); delete indSeries[k]; }
-  markers.sort((a,b)=>a.time-b.time);
-  const mk = JSON.stringify(markers);
-  if (full || mk !== state.markersKey){ markerApi.setMarkers(markers); state.markersKey = mk; }
-  // 段の高さ：ローソク足を大きく、下段は小さく
-  const panes = chart.panes();
-  if (panes.length !== state.paneCount){
-    state.paneCount = panes.length;
-    panes.forEach((p,i)=>p.setStretchFactor(i === 0 ? 3 : 1));
-  }
-}
-
-let rafPending = false, rafFull = false;
-function scheduleRender(full){
-  rafFull = rafFull || full;
-  if (rafPending) return; rafPending = true;
-  requestAnimationFrame(()=>{ rafPending = false; const f = rafFull; rafFull = false; render(f); });
-}
-
-/* ---------- Bid / Ask / スプレッド ---------- */
-// FX（小数3桁・5桁）はpips、それ以外（GOLD・指数など）はポイントで表示
-function fmtSpread(sp){
-  if (sp == null || !isFinite(sp)) return '-';
-  return state.digits === 3 || state.digits === 5 ? (sp/10).toFixed(1) + ' pips' : sp + ' pt';
-}
-function setQuote(q){
-  state.quote = q;
-  if (!q){
-    if (state.askLine){ candle.removePriceLine(state.askLine); state.askLine = null; }
-    return;
-  }
-  if (!state.askLine)
-    state.askLine = candle.createPriceLine({price:q.a, color:'#8a93a3', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Ask'});
-  else state.askLine.applyOptions({price:q.a});
-  if (!rafPending) updateLegend(null);
-}
-
-/* ---------- 凡例（OHLCと指標の値） ---------- */
 function fmt(v, p){ return v == null || !isFinite(v) ? '-' : (+v).toFixed(p); }
-function updateLegend(idx){
-  const bars = state.bars; if (!bars.length || !state.sym){ $('legend').innerHTML = ''; return; }
-  if (idx == null || idx < 0 || idx >= bars.length) idx = bars.length - 1;
-  const b = bars[idx], d = state.digits, cls = b.c >= b.o ? 'up' : 'down';
-  let html = `<div><span class="sym">${state.sym.name}</span> · ${state.tf}</div>` +
-    `<div class="${cls}">始 ${fmt(b.o,d)}　高 ${fmt(b.h,d)}　安 ${fmt(b.l,d)}　終 ${fmt(b.c,d)}</div>`;
-  const q = state.quote;
-  if (q) html += `<div class="quote">Bid ${fmt(q.b,d)}　Ask ${fmt(q.a,d)}　スプレッド <b>${fmtSpread(q.sp)}</b></div>`;
-  if (state.indLines.length)
-    html += '<div class="ind">' + state.indLines.map(l=>`<span style="color:${l.color}">${l.name} ${fmt(l.values[idx], l.prec)}</span>`).join('') + '</div>';
-  $('legend').innerHTML = html;
+// FX（小数3桁・5桁）はpips、それ以外（GOLD・指数など）はポイントで表示
+function fmtSpread(sp, digits){
+  if (sp == null || !isFinite(sp)) return '-';
+  return digits === 3 || digits === 5 ? (sp/10).toFixed(1) + ' pips' : sp + ' pt';
 }
-chart.subscribeCrosshairMove(p=>{
-  updateLegend(p && p.logical != null && p.time != null ? Math.round(p.logical) : null);
-});
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* =====================================================================
+ *  チャート1画面分
+ * ===================================================================== */
+class Panel {
+  constructor(i){
+    this.i = i; this.cfg = G.paneCfg[i];
+    const el = document.createElement('section'); el.className = 'panel';
+    el.innerHTML = `<div class="phead"><select class="psym" aria-label="銘柄"></select><div class="ptfs"></div><select class="ptfsel" aria-label="時間足"></select>` +
+      `<button class="pmax" title="この画面だけを大きく表示">⤢</button></div>` +
+      `<div class="pbody"><div class="pchart"></div><div class="legend"></div><div class="msg hidden"></div></div>`;
+    $('grid').appendChild(el); this.el = el;
+    this.selSym = el.querySelector('.psym'); this.tfBox = el.querySelector('.ptfs'); this.tfSel = el.querySelector('.ptfsel');
+    this.tfSel.innerHTML = TIMEFRAMES.map(t=>`<option value="${t}">${t}</option>`).join('');
+    this.tfSel.onchange = ()=>this.setTf(this.tfSel.value);
+    this.legendEl = el.querySelector('.legend'); this.msgEl = el.querySelector('.msg');
+    this.chart = LC.createChart(el.querySelector('.pchart'), CHART_OPTS);
+    this.candle = this.chart.addSeries(LC.CandlestickSeries, CANDLE_OPTS);
+    this.markerApi = LC.createSeriesMarkers(this.candle, []);
+    this.indSeries = {}; this.indLines = []; this.markersKey = ''; this.paneCount = 1;
+    this.bars = []; this.sym = null; this.digits = 3; this.quote = null; this.askLine = null;
+    this.unsub = null; this.loadSeq = 0; this.rafPending = false; this.rafFull = false; this.fresh = false;
+    this.gk = new GKPanel(this);
+    this.chart.subscribeCrosshairMove(p=>this.updateLegend(p && p.logical != null && p.time != null ? Math.round(p.logical) : null));
+    this.selSym.onchange = ()=>onPanelSymbol(this, this.selSym.value);
+    el.querySelector('.pmax').onclick = ()=>toggleMax(this.i);
+    this.buildTf(); this.fillSymbols();
+  }
+  get tf(){ return this.cfg.tf; }
+
+  setTf(tf){ if (tf === this.tf) return; this.cfg.tf = tf; savePaneCfg(); this.buildTf(); this.load(); }
+  buildTf(){
+    this.tfBox.innerHTML = '';
+    for (const tf of TIMEFRAMES){
+      const b = document.createElement('button'); b.textContent = tf; b.className = tf === this.tf ? 'on' : '';
+      b.onclick = ()=>this.setTf(tf);
+      this.tfBox.appendChild(b);
+    }
+    this.tfSel.value = this.tf;
+  }
+  // 銘柄リストを入れ直す。表示中の銘柄が変わったら true
+  fillSymbols(){
+    const before = this.sym && this.sym.key;
+    this.selSym.innerHTML = G.symbols.map(s=>`<option value="${esc(s.key)}">${esc(s.name)}</option>`).join('');
+    this.sym = G.symbols.find(s=>s.key === this.cfg.sym) || G.symbols[0] || null;
+    this.cfg.sym = this.sym ? this.sym.key : null;
+    if (this.sym){ this.selSym.value = this.sym.key; this.digits = this.sym.digits; }
+    return (this.sym && this.sym.key) !== before;
+  }
+
+  disp(t){ return G.tz === 'jst' && TF_SEC[this.tf] < 86400 ? t - G.serverOffset + JST : t; }
+  toCandle(b){ return {time:this.disp(b.t), open:b.o, high:b.h, low:b.l, close:b.c}; }
+  showMsg(t){ if (!t){ this.msgEl.classList.add('hidden'); return; } this.msgEl.innerHTML = t; this.msgEl.classList.remove('hidden'); }
+
+  async load(){
+    const seq = ++this.loadSeq;
+    if (this.unsub){ this.unsub(); this.unsub = null; }
+    this.setQuote(null);
+    if (!this.sym){ this.bars = []; this.render(true); return; }
+    this.showMsg('読み込み中…');
+    const key = this.sym.key, tf = this.tf;
+    let bars;
+    try{ bars = await G.src.history(key, tf, MAX_BARS); }
+    catch(e){ if (seq === this.loadSeq) this.showMsg('データを読み込めませんでした<br><span class="note">' + esc(e.message) + '</span>'); return; }
+    if (seq !== this.loadSeq) return;
+    this.bars = bars;
+    this.showMsg(bars.length ? '' : 'この時間足のデータがまだありません<br><span class="note">EAが履歴を送り終えるまでお待ちください</span>');
+    this.digits = this.sym.digits;
+    this.candle.applyOptions({priceFormat: priceFormat(this.digits)});
+    this.clearIndicators();
+    this.gk.reset();
+    this.fresh = true; this.render(true); this.fresh = false;
+    if (bars.length) this.chart.timeScale().setVisibleLogicalRange({from: Math.max(0, bars.length - 120), to: bars.length + 14});
+    this.unsub = G.src.subscribe(key, tf, (b,q)=>{ if (seq === this.loadSeq) this.onLive(b,q); }, ()=>this.reloadRecent(50));
+  }
+
+  onLive(b, q){
+    if (q) this.setQuote(q);
+    const bars = this.bars;
+    if (!bars.length){ bars.push(b); this.schedule(true); return; }
+    const last = bars[bars.length-1];
+    if (b.t === last.t){ bars[bars.length-1] = b; this.schedule(false); }
+    else if (b.t > last.t){
+      bars.push(b); this.schedule(false);
+      this.gk.onNewBar(b.t);
+      if (!G.demo) this.reloadRecent(3);   // 確定した直前の足を最終値に揃える
+    }
+  }
+
+  // 直近n本を取り直して差し替える（新しい足ができた時・再接続時）
+  async reloadRecent(n){
+    if (!this.sym) return;
+    const key = this.sym.key, tf = this.tf, seq = this.loadSeq;
+    try{
+      const recent = await G.src.history(key, tf, n);
+      if (seq !== this.loadSeq || !recent.length || !this.bars.length) return;
+      const map = new Map(this.bars.map((b,i)=>[b.t,i]));
+      for (const b of recent){
+        if (map.has(b.t)) this.bars[map.get(b.t)] = b;
+        else if (b.t > this.bars[this.bars.length-1].t) this.bars.push(b);
+      }
+      this.bars.sort((a,b)=>a.t-b.t);
+      this.schedule(true);
+    }catch(e){}
+  }
+
+  schedule(full){
+    this.rafFull = this.rafFull || full;
+    if (this.rafPending) return; this.rafPending = true;
+    requestAnimationFrame(()=>{ this.rafPending = false; const f = this.rafFull; this.rafFull = false; this.render(f); });
+  }
+
+  render(full){
+    const bars = this.bars;
+    if (!bars.length){
+      this.candle.setData([]); this.markerApi.setMarkers([]); this.markersKey = ''; this.indLines = [];
+      this.clearIndicators(); this.updateLegend(null); this.gk.refresh(); return;
+    }
+    if (full){
+      const range = this.chart.timeScale().getVisibleLogicalRange();
+      this.candle.setData(bars.map(b=>this.toCandle(b)));
+      if (range && !this.fresh) this.chart.timeScale().setVisibleLogicalRange(range);
+    } else {
+      this.candle.update(this.toCandle(bars[bars.length-1]));
+    }
+    this.renderIndicators(full);
+    this.updateLegend(null);
+    this.gk.refresh();
+  }
+
+  clearIndicators(){
+    for (const k of Object.keys(this.indSeries)){ this.chart.removeSeries(this.indSeries[k]); delete this.indSeries[k]; }
+  }
+
+  renderIndicators(full){
+    const bars = this.bars, n = bars.length, used = new Set(), markers = [];
+    this.indLines = [];
+    for (const ind of INDICATORS){
+      const st = indState[ind.id]; if (!st.on || ind.custom) continue;
+      let res; try{ res = ind.compute(bars, st.p, TA) || {}; }catch(e){ console.error(ind.name, e); continue; }
+      for (const ln of res.lines || []){
+        const k = ind.id + ':' + ln.key; used.add(k);
+        let s = this.indSeries[k], created = false;
+        if (!s){
+          // 下段の指標は、指標ごとに専用の段（ペイン）を作る
+          let pane = 0, firstInPane = false;
+          if (ind.pane === 'sub'){
+            const sib = Object.keys(this.indSeries).find(x=>x.startsWith(ind.id + ':'));
+            if (sib) pane = this.indSeries[sib].getPane().paneIndex();
+            else { pane = this.chart.panes().length; firstInPane = true; }
+          }
+          s = this.chart.addSeries(LC.LineSeries, {
+            color:ln.color, lineWidth:ln.width || 2, lineStyle:ln.style || 0,
+            priceFormat: priceFormat(ln.precision ?? this.digits),
+            lastValueVisible: ind.pane === 'sub', priceLineVisible:false, crosshairMarkerVisible:false,
+          }, pane);
+          if (firstInPane)
+            for (const lv of ind.levels || []) s.createPriceLine({price:lv, color:'#4a5160', lineWidth:1, lineStyle:2, axisLabelVisible:false});
+          this.indSeries[k] = s; created = true;
+        }
+        const vals = ln.values;
+        if (full || created || ind.repaint){
+          const data = [];
+          for (let i = 0; i < n; i++){
+            const t = this.disp(bars[i].t);
+            data.push(vals[i] == null || !isFinite(vals[i]) ? {time:t} : {time:t, value:vals[i]});
+          }
+          s.setData(data);
+        } else if (vals[n-1] != null && isFinite(vals[n-1])){
+          s.update({time:this.disp(bars[n-1].t), value:vals[n-1]});
+        }
+        this.indLines.push({name:ln.name, color:ln.color, values:vals, prec:ln.precision ?? this.digits});
+      }
+      for (const m of res.markers || []){
+        if (m.index < 0 || m.index >= n) continue;
+        markers.push({time:this.disp(bars[m.index].t), position:m.position || 'aboveBar', shape:m.shape || 'circle', color:m.color || '#fff', text:m.text || ''});
+      }
+    }
+    for (const k of Object.keys(this.indSeries)) if (!used.has(k)){ this.chart.removeSeries(this.indSeries[k]); delete this.indSeries[k]; }
+    markers.sort((a,b)=>a.time-b.time);
+    const mk = JSON.stringify(markers);
+    if (full || mk !== this.markersKey){ this.markerApi.setMarkers(markers); this.markersKey = mk; }
+    // 段の高さ：ローソク足を大きく、下段は小さく
+    const panes = this.chart.panes();
+    if (panes.length !== this.paneCount){
+      this.paneCount = panes.length;
+      panes.forEach((p,i)=>p.setStretchFactor(i === 0 ? 3 : 1));
+    }
+  }
+
+  setQuote(q){
+    this.quote = q;
+    if (!q){
+      if (this.askLine){ this.candle.removePriceLine(this.askLine); this.askLine = null; }
+      return;
+    }
+    if (!this.askLine)
+      this.askLine = this.candle.createPriceLine({price:q.a, color:'#8a93a3', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Ask'});
+    else this.askLine.applyOptions({price:q.a});
+    if (!this.rafPending) this.updateLegend(null);
+  }
+
+  updateLegend(idx){
+    const bars = this.bars;
+    if (!bars.length || !this.sym){ this.legendEl.innerHTML = ''; return; }
+    if (idx == null || idx < 0 || idx >= bars.length) idx = bars.length - 1;
+    const b = bars[idx], d = this.digits, cls = b.c >= b.o ? 'up' : 'down';
+    let html = `<div><span class="sym">${esc(this.sym.name)}</span> · ${this.tf}</div>` +
+      `<div class="ohlc ${cls}">始 ${fmt(b.o,d)}　高 ${fmt(b.h,d)}　安 ${fmt(b.l,d)}　終 ${fmt(b.c,d)}</div>`;
+    const q = this.quote;
+    if (q) html += `<div class="quote"><span class="qba">Bid ${fmt(q.b,d)}　Ask ${fmt(q.a,d)}　</span>スプレッド <b>${fmtSpread(q.sp, d)}</b></div>`;
+    if (this.indLines.length)
+      html += '<div class="ind">' + this.indLines.map(l=>`<span style="color:${l.color}">${esc(l.name)} ${fmt(l.values[idx], l.prec)}</span>`).join('') + '</div>';
+    this.legendEl.innerHTML = html;
+  }
+
+  destroy(){
+    this.loadSeq++;
+    if (this.unsub){ this.unsub(); this.unsub = null; }
+    this.chart.remove(); this.el.remove();
+  }
+}
+
+/* =====================================================================
+ *  画面全体
+ * ===================================================================== */
+let panels = [];
+
+function buildLayout(){
+  const n = Math.min(MAX_PANELS, Math.max(1, G.layout));
+  while (panels.length > n) panels.pop().destroy();
+  if (G.maxIdx >= n) G.maxIdx = -1;
+  while (panels.length < n){ const p = new Panel(panels.length); panels.push(p); if (G.src) p.load(); }
+  $('grid').className = 'n' + n;
+  paintMax(); paintLayout();
+}
+function paintLayout(){
+  for (const b of $('layout').querySelectorAll('button')) b.className = +b.dataset.n === G.layout ? 'on' : '';
+  $('link').className = G.link ? 'on' : '';
+}
+(function initLayoutButtons(){
+  for (let n = 1; n <= MAX_PANELS; n++){
+    const b = document.createElement('button'); b.textContent = n; b.dataset.n = n;
+    b.onclick = ()=>{ G.layout = n; store.set('layout', n); G.maxIdx = -1; buildLayout(); };
+    $('layout').appendChild(b);
+  }
+})();
+
+function toggleMax(i){ G.maxIdx = G.maxIdx === i ? -1 : i; paintMax(); }
+function paintMax(){
+  $('grid').classList.toggle('max', G.maxIdx >= 0);
+  panels.forEach((p,i)=>{
+    p.el.classList.toggle('isMax', i === G.maxIdx);
+    p.el.querySelector('.pmax').textContent = i === G.maxIdx ? '⤡' : '⤢';
+    p.el.querySelector('.pmax').title = i === G.maxIdx ? '元の並びに戻す' : 'この画面だけを大きく表示';
+  });
+}
+
+// 銘柄の切り替え（連動がオンなら全画面）
+function onPanelSymbol(panel, key){
+  const targets = G.link ? panels : [panel];
+  if (G.link) for (const c of G.paneCfg) c.sym = key; else panel.cfg.sym = key;
+  savePaneCfg();
+  for (const p of targets) if (p.fillSymbols()) p.load();
+  for (const p of panels) if (!targets.includes(p)) p.fillSymbols();
+}
+$('link').onclick = ()=>{
+  G.link = !G.link; store.set('link', G.link); paintLayout();
+  if (G.link && panels[0] && panels[0].sym) onPanelSymbol(panels[0], panels[0].sym.key);
+};
 
 /* ---------- 状態表示 ---------- */
-function showMsg(t){ const m = $('msg'); if (!t){ m.classList.add('hidden'); return; } m.innerHTML = t; m.classList.remove('hidden'); }
-function setConn(ok){ state.conn = ok; paintStatus(); }
+function showGlobalMsg(t){ const m = $('gmsg'); if (!t){ m.classList.add('hidden'); return; } m.innerHTML = t; m.classList.remove('hidden'); }
+function setConn(ok){ G.conn = ok; paintStatus(); }
 function paintStatus(){
   let color = '#26a69a', text = '';
-  if (state.demo){ color = '#8a93a3'; text = 'デモ表示中'; }
-  else if (!state.conn){ color = '#ef5350'; text = '接続が切れています（再接続中）'; }
-  else if (!state.lastBeat){ color = '#8a93a3'; text = 'EAからのデータ待ち'; }
+  if (G.demo){ color = '#8a93a3'; text = 'デモ表示中'; }
+  else if (!G.conn){ color = '#ef5350'; text = '接続が切れています（再接続中）'; }
+  else if (!G.lastBeat){ color = '#8a93a3'; text = 'EAからのデータ待ち'; }
   else {
-    const age = Math.max(0, Math.floor(Date.now()/1000) - state.lastBeat);
+    const age = Math.max(0, Math.floor(Date.now()/1000) - G.lastBeat);
     if (age < 60) text = 'EA稼働中';
     else { color = '#f5b041'; text = `EAの更新が ${age < 3600 ? Math.floor(age/60)+'分' : Math.floor(age/3600)+'時間'}止まっています`; }
   }
@@ -495,109 +2103,46 @@ function paintStatus(){
 }
 async function refreshStatus(){
   try{
-    const s = await state.src.status();
-    if (s.updated) state.lastBeat = +s.updated;
+    const s = await G.src.status();
+    if (s.updated) G.lastBeat = +s.updated;
+    if (s.serverOffset != null && +s.serverOffset !== G.serverOffset){
+      G.serverOffset = +s.serverOffset; if (G.tz === 'jst') panels.forEach(p=>p.schedule(true));
+    }
     // MT5の気配値表示が変わったら銘柄リストを読み直す
-    if (s.symbolsRev != null && +s.symbolsRev !== state.symbolsRev){
-      const first = state.symbolsRev == null; state.symbolsRev = +s.symbolsRev;
+    if (s.symbolsRev != null && +s.symbolsRev !== G.symbolsRev){
+      const first = G.symbolsRev == null; G.symbolsRev = +s.symbolsRev;
       if (!first) reloadSymbols();
     }
-    if (s.serverOffset != null && +s.serverOffset !== state.serverOffset){
-      state.serverOffset = +s.serverOffset; if (state.tz === 'jst') scheduleRender(true);
-    }
-    if (!state.demo) setConn(true);
-  }catch(e){ if (!state.demo) setConn(false); }
+    if (!G.demo) setConn(true);
+  }catch(e){ if (!G.demo) setConn(false); }
   paintStatus();
 }
-
-/* ---------- 銘柄リスト ---------- */
-function fillSymbolSelect(){
-  $('sym').innerHTML = state.symbols.map(s=>`<option value="${s.key}">${s.name}</option>`).join('');
-  if (state.sym) $('sym').value = state.sym.key;
-}
 async function reloadSymbols(){
-  let syms; try{ syms = await state.src.symbols(); }catch(e){ return; }
-  state.symbols = syms;
-  const cur = state.sym && syms.find(s=>s.key === state.sym.key);
-  if (cur){ state.sym = cur; fillSymbolSelect(); return; }
-  // 表示中の銘柄が気配値表示から外れた
-  state.sym = syms[0] || null; fillSymbolSelect();
-  if (state.sym) load(); else { state.bars = []; render(true); showMsg('銘柄がありません<br><span class="note">MT5の気配値表示に銘柄を表示してください</span>'); }
+  let syms; try{ syms = await G.src.symbols(); }catch(e){ return; }
+  G.symbols = syms;
+  for (const p of panels) if (p.fillSymbols()) p.load();
+  savePaneCfg();
+  showGlobalMsg(syms.length ? '' : '銘柄がありません<br><span class="note">MT5の気配値表示に銘柄を表示してください</span>');
 }
 
-/* ---------- 読み込み ---------- */
-async function load(){
-  const seq = ++state.loadSeq;
-  if (state.stopLive){ state.stopLive(); state.stopLive = null; }
-  if (!state.sym) return;
-  showMsg('読み込み中…');
-  setQuote(null);
-  let bars;
-  try{ bars = await state.src.history(state.sym.key, state.tf, MAX_BARS); }
-  catch(e){ if (seq === state.loadSeq) showMsg('データを読み込めませんでした<br><span class="note">' + e.message + '</span>'); return; }
-  if (seq !== state.loadSeq) return;
-  state.bars = bars;
-  showMsg(bars.length ? '' : 'この時間足のデータがまだありません<br><span class="note">EAが履歴を送り終えるまでお待ちください</span>');
-  state.digits = state.sym.digits;
-  candle.applyOptions({priceFormat: priceFormat(state.digits)});
-  for (const k of Object.keys(indSeries)){ chart.removeSeries(indSeries[k]); delete indSeries[k]; }
-  render.fresh = true; render(true); render.fresh = false;
-  if (bars.length) chart.timeScale().setVisibleLogicalRange({from: Math.max(0, bars.length - 120), to: bars.length + 5});
-  state.stopLive = state.src.live(state.sym.key, state.tf, onLive, ()=>reloadRecent(50));
-}
-
-function onLive(b, q){
-  if (q) setQuote(q);
-  const bars = state.bars;
-  if (!bars.length){ bars.push(b); scheduleRender(true); return; }
-  const last = bars[bars.length-1];
-  if (b.t === last.t){ bars[bars.length-1] = b; scheduleRender(false); }
-  else if (b.t > last.t){
-    bars.push(b); scheduleRender(false);
-    if (!state.demo) reloadRecent(3);   // 確定した直前の足を最終値に揃える
-  }
-}
-
-// 直近n本を取り直して差し替える（新しい足ができた時・再接続時）
-async function reloadRecent(n){
-  if (!state.sym) return;
-  const key = state.sym.key, tf = state.tf;
-  try{
-    const recent = await state.src.history(key, tf, n);
-    if (!state.sym || key !== state.sym.key || tf !== state.tf || !recent.length) return;
-    const map = new Map(state.bars.map((b,i)=>[b.t,i]));
-    for (const b of recent){
-      if (map.has(b.t)) state.bars[map.get(b.t)] = b;
-      else if (b.t > state.bars[state.bars.length-1].t) state.bars.push(b);
-    }
-    state.bars.sort((a,b)=>a.t-b.t);
-    scheduleRender(true);
-  }catch(e){}
-}
-
-/* ---------- UI ---------- */
-function buildTfButtons(){
-  $('tfs').innerHTML = '';
-  for (const tf of TIMEFRAMES){
-    const b = document.createElement('button'); b.textContent = tf; b.className = tf === state.tf ? 'on' : '';
-    b.onclick = ()=>{ state.tf = tf; store.set('tf', tf); buildTfButtons(); load(); };
-    $('tfs').appendChild(b);
-  }
-}
-function paintTz(){ $('tz').textContent = state.tz === 'jst' ? '日本時間' : 'サーバー時間'; }
-$('tz').onclick = ()=>{ state.tz = state.tz === 'jst' ? 'server' : 'jst'; store.set('tz', state.tz); paintTz(); scheduleRender(true); };
-$('sym').onchange = ()=>{ state.sym = state.symbols.find(s=>s.key === $('sym').value); store.set('sym', state.sym.key); load(); };
+/* ---------- 時刻表示・インジケーター ---------- */
+function paintTz(){ $('tz').textContent = G.tz === 'jst' ? '日本時間' : 'サーバー時間'; }
+$('tz').onclick = ()=>{ G.tz = G.tz === 'jst' ? 'server' : 'jst'; store.set('tz', G.tz); paintTz(); panels.forEach(p=>p.schedule(true)); };
 
 function saveInd(){ store.set('ind', indState); }
+function refreshIndicators(){ panels.forEach(p=>{ p.clearIndicators(); p.gk.reset(); p.schedule(true); }); paintGkBtn(); }
+function paintGkBtn(){ $('gkBtn').className = indState.gk && indState.gk.on ? 'on' : ''; }
+$('gkBtn').onclick = ()=>{ indState.gk.on = !indState.gk.on; saveInd(); refreshIndicators(); };
 function buildIndList(){
   const box = $('indList'); box.innerHTML = '';
   for (const ind of INDICATORS){
     const st = indState[ind.id], item = document.createElement('div'); item.className = 'ind-item';
     const head = document.createElement('label'); head.className = 'head';
     const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = st.on;
-    cb.onchange = ()=>{ st.on = cb.checked; saveInd(); scheduleRender(true); };
+    cb.onchange = ()=>{ st.on = cb.checked; saveInd(); refreshIndicators(); };
     head.append(cb, document.createTextNode(ind.name + (ind.pane === 'sub' ? '（下段）' : '')));
     item.appendChild(head);
+    if (ind.custom === 'gk'){ gkBuildSettings(item, refreshIndicators); box.appendChild(item); continue; }
     if (ind.params.length){
       const ps = document.createElement('div'); ps.className = 'params';
       for (const pr of ind.params){
@@ -608,10 +2153,8 @@ function buildIndList(){
         inp.value = st.p[pr.key];
         inp.onchange = ()=>{
           const v = pr.options ? inp.value : parseFloat(inp.value);
-          if (!pr.options && !(v > 0)) { inp.value = st.p[pr.key]; return; }
-          st.p[pr.key] = v; saveInd();
-          for (const k of Object.keys(indSeries)) if (k.startsWith(ind.id + ':')){ chart.removeSeries(indSeries[k]); delete indSeries[k]; }
-          scheduleRender(true);
+          if (!pr.options && !(v > 0)){ inp.value = st.p[pr.key]; return; }
+          st.p[pr.key] = v; saveInd(); refreshIndicators();
         };
         lab.appendChild(inp); ps.appendChild(lab);
       }
@@ -624,7 +2167,8 @@ $('indBtn').onclick = ()=>{ buildIndList(); $('indModal').classList.remove('hidd
 $('indClose').onclick = ()=>$('indModal').classList.add('hidden');
 $('indModal').onclick = e=>{ if (e.target.id === 'indModal') $('indModal').classList.add('hidden'); };
 
-function openCfg(){ $('cfgUrl').value = state.demo && !store.get('db','') ? '' : state.db; $('cfgModal').classList.remove('hidden'); }
+/* ---------- 接続設定 ---------- */
+function openCfg(){ $('cfgUrl').value = G.demo ? '' : G.db; $('cfgModal').classList.remove('hidden'); }
 $('cfgBtn').onclick = openCfg;
 $('cfgCancel').onclick = ()=>$('cfgModal').classList.add('hidden');
 $('cfgDemo').onclick = ()=>{ $('cfgModal').classList.add('hidden'); start('demo'); };
@@ -636,28 +2180,31 @@ $('cfgSave').onclick = ()=>{
 
 /* ---------- 起動 ---------- */
 async function start(db){
-  if (state.stopLive){ state.stopLive(); state.stopLive = null; }
-  if (state.statusTimer){ clearInterval(state.statusTimer); state.statusTimer = null; }
-  state.db = db; state.demo = !db || db === 'demo'; state.src = state.demo ? Demo : Firebase;
-  state.lastBeat = 0; state.symbolsRev = null; state.conn = true; state.bars = []; state.sym = null; render(true); paintStatus();
-  showMsg('接続中…');
+  if (G.src) G.src.closeAll();
+  if (G.statusTimer){ clearInterval(G.statusTimer); G.statusTimer = null; }
+  while (panels.length) panels.pop().destroy();
+  G.db = db; G.demo = !db || db === 'demo'; G.src = null;
+  G.lastBeat = 0; G.symbolsRev = null; G.conn = true; G.symbols = [];
+  paintStatus(); showGlobalMsg('接続中…');
+  const src = G.demo ? Demo : Firebase;
   let syms;
-  try{ syms = await state.src.symbols(); }
-  catch(e){ setConn(false); showMsg('データベースに接続できませんでした<br><span class="note">' + e.message + '<br>⚙ からURLを確認してください</span>'); return; }
-  state.symbols = syms;
-  if (!syms.length){ showMsg('まだデータがありません<br><span class="note">VPSでEAが動いているか確認してください</span>'); }
-  const savedSym = store.get('sym', null);
-  state.sym = syms.find(s=>s.key === savedSym) || syms[0] || null;
-  fillSymbolSelect();
+  try{ G.db = db; syms = await src.symbols(); }
+  catch(e){ setConn(false); showGlobalMsg('データベースに接続できませんでした<br><span class="note">' + esc(e.message) + '<br>⚙ からURLを確認してください</span>'); return; }
+  G.src = src; G.symbols = syms;
+  showGlobalMsg(syms.length ? '' : 'まだデータがありません<br><span class="note">VPSでEAが動いているか確認してください</span>');
+  if (G.link){ const k = G.paneCfg[0].sym; for (const c of G.paneCfg) c.sym = k; }
   await refreshStatus();
-  state.statusTimer = setInterval(refreshStatus, 15000);
-  await load();
+  G.statusTimer = setInterval(refreshStatus, 15000);
+  buildLayout();
+  savePaneCfg();
 }
 setInterval(paintStatus, 5000);
 // スマホでアプリを切り替えて戻ったときは取り直す
-document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible' && state.src && !state.demo){ refreshStatus(); load(); } });
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState === 'visible' && G.src && !G.demo){ refreshStatus(); panels.forEach(p=>p.load()); }
+});
 
-buildTfButtons(); paintTz();
+paintTz(); paintLayout(); paintGkBtn();
 start(store.get('db', '') || DEFAULT_DB_URL || 'demo');
 </script>
 </body>
