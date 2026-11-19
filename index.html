@@ -34,8 +34,8 @@
   #dot{width:8px;height:8px;border-radius:50%;background:#555;flex:none}
   @media (max-width:640px){
     #status{order:10;flex-basis:100%} .seg .lbl{display:none}
-    header{gap:4px;padding:5px 6px} header button{padding:5px 8px;font-size:13px} .seg button{padding:5px 10px}
-    #link .txt{display:none}
+    header{gap:3px;padding:5px 4px} header button{padding:5px 6px;font-size:13px} header .seg button{padding:5px 8px}
+    #link .txt,#tz .txt{display:none}
   }
 
   /* チャートの並べ方 */
@@ -96,6 +96,37 @@
   .params input,.params select{width:80px;padding:4px 6px}
   .row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
   #cfgUrl{width:100%;padding:8px}
+  /* ZONE接触一覧 */
+  #scan{position:absolute;inset:0;z-index:8;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+  .sc-tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .sc-tools .seg button{padding:4px 8px;font-size:12px}
+  #scanSummary{padding:6px 10px;font-size:13px;color:var(--muted)} #scanSummary b{color:var(--warn);font-size:15px}
+  #scanTable{flex:1;overflow:auto;padding:0 6px}
+  #scanTable table{border-collapse:separate;border-spacing:0;font-size:13px;min-width:100%}
+  #scanTable th,#scanTable td{padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:center}
+  #scanTable thead th{position:sticky;top:0;background:var(--panel);z-index:2;color:var(--muted);font-weight:600}
+  #scanTable tbody th{position:sticky;left:0;background:var(--bg);text-align:left;z-index:1;font-weight:600}
+  #scanTable thead th:first-child{left:0;z-index:3;text-align:left}
+  #scanTable td[data-sym]{cursor:pointer} #scanTable td[data-sym]:hover{outline:1px solid var(--accent);outline-offset:-1px}
+  #scanTable .up{color:#26c6da} #scanTable .dn{color:#ef5350} #scanTable .na{color:var(--muted)}
+  #scanTable .dist{margin-left:4px;color:#c9ced6;font-variant-numeric:tabular-nums} #scanTable .mk{margin-left:4px;font-size:11px}
+  #scanTable .sc-hit b{margin-left:4px} #scanTable .hit-up{background:rgba(0,188,212,.28)} #scanTable .hit-dn{background:rgba(239,83,80,.30)}
+  #scanTable .sc-na,#scanTable .sc-wait{color:var(--muted)} .sc-empty{color:var(--muted);padding:20px!important}
+  .sc-legend{padding:6px 10px 10px;margin:0}
+  @media (max-width:640px){ #scanBtn .txt{display:none} #scanTable th,#scanTable td{padding:7px 5px;font-size:12px} }
+  /* リプレイ */
+  #rpBar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;background:#1a1530;border-top:1px solid #4b3c8a}
+  #rpBar .rplbl{font-size:11px;color:#b9a8ff;border:1px solid #4b3c8a;border-radius:4px;padding:1px 5px}
+  #rpTime{font-weight:700;font-variant-numeric:tabular-nums;min-width:9.5em}
+  #rpBar select{padding:5px 6px}
+  #rpPlay{min-width:44px}
+  #rpExit{margin-left:auto}
+  #rpSel{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:7;background:#3b2f73;color:#fff;
+    border-radius:8px;padding:8px 10px;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.5);white-space:nowrap}
+  #rpSel button{margin-left:8px;padding:3px 8px}
+  #rpNote{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:7;background:rgba(22,26,34,.95);
+    border:1px solid #4b3c8a;border-radius:8px;padding:7px 12px;font-size:13px;max-width:92%}
+  @media (max-width:640px){ #rpBtn .txt{display:none} #rpTime{min-width:0;font-size:13px} #rpBar{gap:4px;padding:5px 6px} #rpBar button,#rpBar select{font-size:13px} }
   /* GK_ZONE */
   .gktoast{position:absolute;left:50%;top:8px;transform:translateX(-50%);z-index:5;max-width:92%;
     background:rgba(245,176,65,.95);color:#111;font-weight:600;font-size:13px;border-radius:8px;padding:7px 12px;
@@ -127,13 +158,45 @@
   <button id="tz" title="時刻表示の切り替え">日本時間</button>
   <button id="indBtn">指標</button>
   <button id="gkBtn" title="GK_ZONEの表示オン・オフ">GK</button>
+  <button id="scanBtn" title="全銘柄のZONE接触状況">📋<span class="txt"> 一覧</span></button>
+  <button id="rpBtn" title="過去の相場を1本ずつ再現">⏪<span class="txt"> リプレイ</span></button>
   <button id="cfgBtn" aria-label="設定">⚙</button>
   <div id="status"><span id="dot"></span><span id="statusText">接続中…</span></div>
 </header>
 <main>
   <div id="grid" class="n1"></div>
   <div id="gmsg" class="hidden"></div>
+  <section id="scan" class="hidden">
+    <div class="sc-tools">
+      <button id="scanClose">← チャート</button>
+      <div class="seg" id="scanTfs"></div>
+      <label class="chip"><input type="checkbox" id="scanOnly">接触中のみ</label>
+      <label class="chip"><input type="checkbox" id="scanSort">接触の多い順</label>
+      <select id="scanInt" aria-label="自動更新">
+        <option value="0">自動更新オフ</option><option value="15">15秒ごと</option><option value="30">30秒ごと</option><option value="60">60秒ごと</option>
+      </select>
+      <button id="scanRefresh">更新</button>
+      <span id="scanStatus" class="note"></span>
+    </div>
+    <div id="scanSummary"></div>
+    <div id="scanTable"></div>
+    <p class="note sc-legend">▲上昇 ▼下降　なし＝ZONEなし　数字＝現在値からZONEまでの距離（pips。↓はZONEが下、↑は上）　接触中＝その時間足の現在のローソク足がZONEにかかっている　↑↑↑/↓↓↓＝直近の高値（安値）のあとZONEまで戻った　マスをタップするとチャートを開きます</p>
+  </section>
+  <div id="rpSel" class="hidden">開始位置にしたいローソク足をタップ <button id="rpSelCancel">キャンセル</button></div>
+  <div id="rpNote" class="hidden"></div>
 </main>
+<div id="rpBar" class="hidden">
+  <span class="rplbl">リプレイ</span><span id="rpTime"></span>
+  <button id="rpPlay" class="on">▶</button>
+  <button id="rpNext" title="1本進める（→）">⏭</button>
+  <select id="rpSpeed" aria-label="速度">
+    <option value="2000">2秒ごと</option><option value="1000">1秒ごと</option>
+    <option value="500">0.5秒ごと</option><option value="200">0.2秒ごと</option><option value="60">最速</option>
+  </select>
+  <select id="rpStepTf" aria-label="1回で進める幅"></select>
+  <button id="rpPick">開始位置</button>
+  <button id="rpExit">終了</button>
+</div>
 
 <div id="indModal" class="modal hidden">
   <div class="sheet">
@@ -1109,7 +1172,7 @@ class GKPanel {
       if (this.fetching[tf]) continue;
       this.fetching[tf] = true;
       try{
-        const bars = await G.src.history(sym.key, tf, GK_KEEP + 8);
+        const bars = Replay.active ? await Replay.get(sym.key, tf) : await G.src.history(sym.key, tf, GK_KEEP + 8);
         if (seq !== this.seq) return;
         this.htf[tf] = bars;
       }catch(e){}
@@ -1119,6 +1182,7 @@ class GKPanel {
   }
   // チャートに新しい足ができたとき：区切りを越えた上位足を取り直す
   onNewBar(t){
+    if (Replay.active) return;
     const due = [];
     for (const tf of Object.keys(this.htf)){
       const b = this.htf[tf]; if (!b || !b.length) continue;
@@ -1147,7 +1211,12 @@ class GKPanel {
     const now = bars[bars.length-1].t, chartSec = TF_SEC[this.p.tf];
     if (this.started && this.currentBar !== now) this.engines.forEach(e=>e.commit());
     this.currentBar = now; this.started = true;
-    const ctx = {chart:bars, chartSec, htf:this.htf};
+    let htf = this.htf;
+    if (Replay.active){   // リプレイ中は時刻 T までの上位足だけを使う
+      htf = {};
+      for (const tf of Object.keys(this.htf)) htf[tf] = Replay.htfView(this.htf[tf], TF_SEC[tf], this.p.replayStep, Replay.T);
+    }
+    const ctx = {chart:bars, chartSec, htf};
     for (const e of this.engines){
       e.cfg = this.laneCfg(e.lane);
       e.restore(); e.ready = false;
@@ -1455,6 +1524,344 @@ function gkBuildSettings(box, onChange){
 }
 
 /* =====================================================================
+ *  リプレイ（過去の相場を1本ずつ再現）
+ *  ---------------------------------------------------------------------
+ *  ・時刻 T（サーバー時間）までに確定したデータだけを表示する
+ *  ・各画面の「形成中の足」は、ステップ足（例：M15）を T まで集計して作る
+ *  ・全画面が同じ T で動く。データはリプレイ開始時点のものを使う（ライブ更新は止める）
+ * ===================================================================== */
+const Replay = {
+  active:false, selecting:false, playing:false, T:null, Tmax:null,
+  stepTf:'M15', speedMs:1000, timer:null, cache:{},
+
+  stepSec(){ return TF_SEC[this.stepTf]; },
+  // 全データの取得（開始時点のスナップショットをキャッシュ）
+  get(key, tf){
+    const k = key + ':' + tf;
+    if (!this.cache[k]) this.cache[k] = G.src.history(key, tf, MAX_BARS).catch(e=>{ delete this.cache[k]; throw e; });
+    return this.cache[k];
+  },
+  // t + sec <= T を満たす本数（二分探索）
+  countClosed(bars, sec, T){
+    let lo = 0, hi = bars.length;
+    while (lo < hi){ const m = (lo + hi) >> 1; if (bars[m].t + sec <= T) lo = m + 1; else hi = m; }
+    return lo;
+  },
+  // 時刻 T 時点のチャート（確定足＋ステップ足から作った形成中の足）
+  view(full, sec, step, T){
+    const ss = this.stepSec(), out = full.slice(0, this.countClosed(full, sec, T));
+    if (step && sec > ss){
+      const bucket = Math.floor((T - ss) / sec) * sec;
+      if (bucket + sec > T && (!out.length || bucket > out[out.length-1].t)){
+        let b = null;
+        const n = this.countClosed(step, ss, T);
+        for (let i = n - 1; i >= 0 && step[i].t >= bucket; i--){
+          const s = step[i];
+          if (!b) b = {t:bucket, o:s.o, h:s.h, l:s.l, c:s.c, v:s.v || 0};
+          else { b.o = s.o; b.h = Math.max(b.h, s.h); b.l = Math.min(b.l, s.l); b.v += s.v || 0; }
+        }
+        if (b) out.push(b);
+      }
+    }
+    return out;
+  },
+  // GK_ZONE の上位足用：末尾は必ず「形成中の足」（区切りの時刻だけ使う）
+  htfView(full, sec, step, T){
+    const out = this.view(full, sec, step, T), last = out[out.length-1];
+    if (!last || last.t + sec <= T){
+      const c = last ? last.c : 0;
+      out.push({t:Math.max(Math.floor(T / sec) * sec, last ? last.t + sec : 0), o:c, h:c, l:c, c, v:0});
+    }
+    return out;
+  },
+
+  /* ---- 操作 ---- */
+  toggle(){ if (this.active || this.selecting) this.exit(); else this.startPick(); },
+  startPick(){
+    this.pause(); this.selecting = true;
+    if (!this.active){ this.cache = {}; this.stepTf = this.defaultStep(); }
+    paintReplay();
+  },
+  cancelPick(){ this.selecting = false; paintReplay(); },
+  defaultStep(){
+    const secs = panels.map(p=>TF_SEC[p.tf]);
+    const min = Math.min(...secs);
+    return TIMEFRAMES.find(t=>TF_SEC[t] === min) || 'M15';
+  },
+  // チャートをタップ：そのローソク足までを表示して開始
+  pick(panel, pt){
+    if (pt.logical == null || !panel.bars.length) return;
+    const i = Math.max(0, Math.min(panel.bars.length - 1, Math.round(pt.logical)));
+    this.begin(panel.bars[i].t + TF_SEC[panel.tf]);
+  },
+  async begin(T0){
+    this.selecting = false; this.pause();
+    showGlobalMsg('リプレイを準備中…');
+    const ss = this.stepSec(), keys = [...new Set(panels.filter(p=>p.sym).map(p=>p.sym.key))];
+    let first = -Infinity, last = Infinity;
+    try{
+      for (const k of keys){
+        const st = await this.get(k, this.stepTf);
+        if (!st.length) continue;
+        first = Math.max(first, st[0].t + ss); last = Math.min(last, st[st.length-1].t + ss);
+      }
+    }catch(e){ showGlobalMsg('データを読み込めませんでした<br><span class="note">' + esc(e.message) + '</span>'); return; }
+    showGlobalMsg('');
+    if (!isFinite(first) || !isFinite(last)){ rpNotice('リプレイに使えるデータがありません'); paintReplay(); return; }
+    let T = Math.ceil(T0 / ss) * ss;
+    if (T < first){ T = first; rpNotice(`${this.stepTf}のデータは ${fmtJst(first - ss)} からのため、そこから始めます`); }
+    if (T > last) T = last;
+    this.T = T; this.Tmax = last; this.active = true;
+    paintReplay(); paintStatus();
+    panels.forEach(p=>p.load());
+  },
+  // 次の時刻へ（データの無い時間帯＝週末などは飛ばす）
+  next(){
+    const ss = this.stepSec();
+    let nt = Infinity;
+    for (const p of panels){
+      const st = p.replayStep; if (!st) continue;
+      const n = this.countClosed(st, ss, this.T);
+      if (n < st.length) nt = Math.min(nt, st[n].t + ss);
+    }
+    if (!isFinite(nt) || this.T >= this.Tmax){ this.pause(); rpNotice('最新の足まで進みました'); return false; }
+    this.T = Math.min(nt, this.Tmax);
+    panels.forEach(p=>p.applyReplay(false));
+    paintReplay();
+    return true;
+  },
+  play(){
+    if (!this.active || this.playing) return;
+    this.playing = true; paintReplay();
+    const tick = ()=>{ if (!this.playing) return; if (this.next()) this.timer = setTimeout(tick, this.speedMs); };
+    this.timer = setTimeout(tick, Math.min(this.speedMs, 300));
+  },
+  pause(){ this.playing = false; clearTimeout(this.timer); this.timer = null; if ($('rpPlay')) paintReplay(); },
+  setStep(tf){
+    this.stepTf = tf;
+    if (!this.active) return;
+    const ss = this.stepSec();
+    this.T = Math.floor(this.T / ss) * ss;
+    this.begin(this.T);
+  },
+  exit(){
+    this.pause(); const was = this.active;
+    this.active = false; this.selecting = false; this.cache = {};
+    paintReplay(); paintStatus();
+    if (was) panels.forEach(p=>p.load());
+  },
+};
+
+function fmtJst(t){
+  const d = new Date((t - G.serverOffset + 9*3600) * 1000), w = '日月火水木金土'[d.getUTCDay()];
+  const p2 = n=>String(n).padStart(2,'0');
+  return `${d.getUTCMonth()+1}/${d.getUTCDate()}(${w}) ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`;
+}
+function rpNotice(text){
+  const el = $('rpNote'); el.textContent = text; el.classList.remove('hidden');
+  clearTimeout(rpNotice.t); rpNotice.t = setTimeout(()=>el.classList.add('hidden'), 5000);
+}
+function paintReplay(){
+  const R = Replay;
+  $('rpBtn').className = R.active || R.selecting ? 'on' : '';
+  $('rpSel').classList.toggle('hidden', !R.selecting);
+  $('rpBar').classList.toggle('hidden', !R.active);
+  if (!R.active) return;
+  $('rpTime').textContent = fmtJst(R.T);
+  $('rpPlay').textContent = R.playing ? '⏸' : '▶';
+  $('rpPlay').title = R.playing ? '一時停止（Space）' : '再生（Space）';
+  const min = Math.min(...panels.map(p=>TF_SEC[p.tf]));
+  const opts = TIMEFRAMES.filter(t=>TF_SEC[t] <= min);
+  const sel = $('rpStepTf');
+  const html = opts.map(t=>`<option value="${t}">1本＝${t}</option>`).join('');
+  if (sel.dataset.html !== html){ sel.innerHTML = html; sel.dataset.html = html; }
+  sel.value = R.stepTf;
+  $('rpSpeed').value = String(R.speedMs);
+}
+function wireReplay(){
+  $('rpBtn').onclick = ()=>Replay.toggle();
+  $('rpSelCancel').onclick = ()=>{ if (Replay.active) Replay.cancelPick(); else Replay.exit(); };
+  $('rpPlay').onclick = ()=>{ if (Replay.playing) Replay.pause(); else Replay.play(); };
+  $('rpNext').onclick = ()=>{ Replay.pause(); Replay.next(); };
+  $('rpSpeed').onchange = ()=>{ Replay.speedMs = +$('rpSpeed').value; };
+  $('rpStepTf').onchange = ()=>Replay.setStep($('rpStepTf').value);
+  $('rpPick').onclick = ()=>Replay.startPick();
+  $('rpExit').onclick = ()=>Replay.exit();
+  // PC：Space＝再生/停止、→＝1本進める
+  document.addEventListener('keydown', e=>{
+    if (!Replay.active || /INPUT|SELECT|TEXTAREA/.test((e.target.tagName || ''))) return;
+    if (e.code === 'Space'){ e.preventDefault(); $('rpPlay').click(); }
+    else if (e.code === 'ArrowRight'){ e.preventDefault(); $('rpNext').click(); }
+  });
+}
+
+/* =====================================================================
+ *  ZONE接触一覧（全銘柄 × 時間足）
+ *  ---------------------------------------------------------------------
+ *  ・各マスは「その時間足のGK_ZONE」を、その時間足のローソク足で計算した結果
+ *    （チャートの「現在足」系統と同じ。ダウ・ZONE・接触中は下位足チャートで見ても同じ）
+ *  ・接触中＝その時間足の現在のローソク足がZONEに一部でもかかっている
+ * ===================================================================== */
+function gkScanCompute(bars, tf){
+  const sec = TF_SEC[tf];
+  if (!bars || bars.length < GK_KEEP + 1) return {ok:false, status:'履歴待機'};
+  const e = new GKEngine(0);
+  e.cfg = {tf, minutes:sec/60, enabled:true, showPullback:true, showExtremes:true, showZone:true, horizontal:false, horizontalBars:50};
+  if (!e.loadHTF({chart:bars, chartSec:sec, htf:{}})) return {ok:false, status:e.status};
+  const last = bars[bars.length-1];
+  e.Rebuild(last.t);
+  if (e.dataError) return {ok:false, status:'エラー'};
+  e.Realtime();
+  const v = e.st, dir = v.trendDirection, hasZone = (dir === 1 || dir === -1) && v.Zonecount > 0;
+  let reached = false;
+  if (hasZone && dir === 1 && v.alerttakaneindex > 0){
+    let lo = v.alerttakane; for (let n = 0; n < v.alerttakaneindex; n++) if (PGt(lo, e.CL(n))) lo = e.CL(n);
+    reached = PGe(v.Zonetop, lo);
+  } else if (hasZone && dir === -1 && v.alertyasuneindex > 0){
+    let hi = v.alertyasune; for (let n = 0; n < v.alertyasuneindex; n++) if (PLt(hi, e.CH(n))) hi = e.CH(n);
+    reached = PLe(v.Zonebottom, hi);
+  }
+  const contact = hasZone && PLe(last.l, v.Zonetop) && PGe(last.h, v.Zonebottom);
+  return {ok:true, dir, hasZone, zt:v.Zonetop, zb:v.Zonebottom, contact, reached, price:last.c};
+}
+
+const Scanner = {
+  on:false, loading:false, timer:null, lastUpdate:null, seq:0,
+  tfs: null, onlyContact:false, sortContact:false, interval:30,
+  data:{}, results:{},
+  init(){
+    this.tfs = store.get('scanTfs', ['M5','M15','H1','H4','D1']).filter(t=>TIMEFRAMES.includes(t));
+    this.onlyContact = store.get('scanOnly', false); this.sortContact = store.get('scanSort', false);
+    this.interval = store.get('scanInt', 30);
+  },
+  save(){ store.set('scanTfs', this.tfs); store.set('scanOnly', this.onlyContact); store.set('scanSort', this.sortContact); store.set('scanInt', this.interval); },
+
+  open(){
+    if (this.on) return;
+    this.on = true; $('scan').classList.remove('hidden'); $('scanBtn').className = 'on';
+    try{ if (location.hash !== '#scan') history.replaceState(null, '', '#scan'); }catch(e){}
+    this.buildTools(); this.render(); this.refresh(true);
+  },
+  close(){
+    if (!this.on) return;
+    this.on = false; this.seq++; clearTimeout(this.timer);
+    $('scan').classList.add('hidden'); $('scanBtn').className = '';
+    try{ if (location.hash === '#scan') history.replaceState(null, '', location.pathname + location.search); }catch(e){}
+  },
+  schedule(){
+    clearTimeout(this.timer);
+    if (this.on && this.interval > 0) this.timer = setTimeout(()=>{ if (document.visibilityState === 'visible') this.refresh(false); else this.schedule(); }, this.interval * 1000);
+  },
+
+  // 現在のローソク足（全時間足）を1銘柄ずつ取得
+  async liveSnapshot(key){
+    if (G.demo){ const o = {}; for (const tf of this.tfs) o[tf] = Demo.aggregate(key, tf, 1)[0]; return o; }
+    return await Firebase.get(`/live/${key}`) || {};
+  },
+  async refresh(force){
+    if (!G.src || this.loading) return;
+    const seq = ++this.seq; this.loading = true; this.paintStatus('更新中…');
+    const syms = G.symbols, jobs = [];
+    for (const s of syms) jobs.push(async ()=>{
+      let live = {};
+      try{ live = await this.liveSnapshot(s.key); }catch(e){}
+      const d = this.data[s.key] || (this.data[s.key] = {});
+      for (const tf of this.tfs){
+        let bars = d[tf];
+        const lb = live[tf] && live[tf].t ? {t:+live[tf].t, o:+live[tf].o, h:+live[tf].h, l:+live[tf].l, c:+live[tf].c, v:+(live[tf].v||0)} : null;
+        // 初回、または新しい足ができたときは履歴を取り直す
+        if (!bars || (lb && lb.t > bars[bars.length-1].t)){
+          try{ bars = d[tf] = await G.src.history(s.key, tf, GK_KEEP + 8); }catch(e){ bars = null; }
+        }
+        if (bars && lb){
+          if (lb.t === bars[bars.length-1].t) bars[bars.length-1] = lb;
+          else if (lb.t > bars[bars.length-1].t) bars.push(lb);
+        }
+        (this.results[s.key] || (this.results[s.key] = {}))[tf] = bars ? gkScanCompute(bars, tf) : {ok:false, status:'取得失敗'};
+      }
+      if (seq === this.seq) this.renderSoon();
+    });
+    // 同時に6銘柄ずつ取得
+    let i = 0;
+    await Promise.all(Array.from({length:Math.min(6, jobs.length)}, async ()=>{ while (i < jobs.length && seq === this.seq) await jobs[i++](); }));
+    if (seq !== this.seq) return;
+    this.loading = false; this.lastUpdate = new Date(); this.render(); this.schedule();
+  },
+  renderSoon(){ if (this.rafP) return; this.rafP = true; requestAnimationFrame(()=>{ this.rafP = false; this.render(); }); },
+
+  /* ---- 表示 ---- */
+  buildTools(){
+    const box = $('scanTfs'); box.innerHTML = '';
+    for (const tf of TIMEFRAMES){
+      const b = document.createElement('button'); b.textContent = tf; b.className = this.tfs.includes(tf) ? 'on' : '';
+      b.onclick = ()=>{
+        if (this.tfs.includes(tf)){ if (this.tfs.length === 1) return; this.tfs = this.tfs.filter(t=>t !== tf); }
+        else this.tfs = TIMEFRAMES.filter(t=>t === tf || this.tfs.includes(t));
+        this.save(); this.buildTools(); this.render(); this.seq++; this.loading = false; this.refresh(true);
+      };
+      box.appendChild(b);
+    }
+    $('scanOnly').checked = this.onlyContact; $('scanSort').checked = this.sortContact; $('scanInt').value = String(this.interval);
+  },
+  paintStatus(text){
+    const t = this.lastUpdate, p2 = n=>String(n).padStart(2,'0');
+    $('scanStatus').textContent = text || (t ? `最終更新 ${p2(t.getHours())}:${p2(t.getMinutes())}:${p2(t.getSeconds())}` + (this.interval ? `（${this.interval}秒ごと）` : '（自動更新オフ）') : '');
+  },
+  cell(sym, tf){
+    const r = (this.results[sym.key] || {})[tf];
+    if (!r) return `<td class="sc-wait">…</td>`;
+    if (!r.ok) return `<td class="sc-na" title="${esc(r.status)}">${r.status === '履歴待機' ? '待機' : '–'}</td>`;
+    const d = sym.digits, mul = d === 3 || d === 5 ? Math.pow(10, d-1) : Math.pow(10, d), unit = d === 3 || d === 5 ? '' : 'pt';
+    const arrow = r.dir === 1 ? '<span class="up">▲</span>' : r.dir === -1 ? '<span class="dn">▼</span>' : '<span class="na">–</span>';
+    const mark = r.reached ? `<span class="${r.dir === 1 ? 'up' : 'dn'} mk">${r.dir === 1 ? '↑↑↑' : '↓↓↓'}</span>` : '';
+    const attrs = `data-sym="${esc(sym.key)}" data-tf="${tf}"`;
+    if (r.contact) return `<td ${attrs} class="sc-hit ${r.dir === 1 ? 'hit-up' : 'hit-dn'}">${arrow}<b>接触中</b>${mark}</td>`;
+    let txt = 'なし';
+    if (r.hasZone){
+      const dist = r.price > r.zt ? r.price - r.zt : r.zb - r.price;
+      const n = dist * mul;
+      txt = (unit ? Math.round(n) + unit : n.toFixed(1)) + (r.price > r.zt ? '↓' : '↑');
+    }
+    return `<td ${attrs}>${arrow}<span class="dist">${r.dir === 0 ? '' : txt}</span>${mark}</td>`;
+  },
+  render(){
+    if (!this.on) return;
+    let syms = G.symbols.slice();
+    const hits = s => this.tfs.filter(tf=>((this.results[s.key] || {})[tf] || {}).contact).length;
+    if (this.onlyContact) syms = syms.filter(s=>hits(s) > 0);
+    if (this.sortContact) syms.sort((a,b)=>hits(b) - hits(a) || a.order - b.order);
+    const total = G.symbols.reduce((n,s)=>n + hits(s), 0);
+    $('scanSummary').innerHTML = `接触中 <b>${total}</b> 件` + (total ? '：' + G.symbols.flatMap(s=>this.tfs.filter(tf=>((this.results[s.key] || {})[tf] || {}).contact).map(tf=>`${esc(s.name)} ${tf}`)).join('、') : '');
+    let html = '<table><thead><tr><th>銘柄</th>' + this.tfs.map(t=>`<th>${t}</th>`).join('') + '</tr></thead><tbody>';
+    for (const s of syms) html += `<tr><th>${esc(s.name)}</th>` + this.tfs.map(tf=>this.cell(s, tf)).join('') + '</tr>';
+    if (!syms.length) html += `<tr><td colspan="${this.tfs.length + 1}" class="sc-empty">${this.onlyContact ? '接触中の銘柄はありません' : '銘柄がありません'}</td></tr>`;
+    $('scanTable').innerHTML = html + '</tbody></table>';
+    if (!this.loading) this.paintStatus();
+  },
+  // マスをタップ：その銘柄・時間足のチャートへ
+  openChart(key, tf){
+    this.close();
+    const p = panels[0]; if (!p) return;
+    if (G.maxIdx >= 0){ G.maxIdx = -1; paintMax(); }
+    onPanelSymbol(p, key);
+    p.setTf(tf);
+  },
+};
+
+function wireScan(){
+  Scanner.init();
+  $('scanBtn').onclick = ()=>Scanner.on ? Scanner.close() : Scanner.open();
+  $('scanClose').onclick = ()=>Scanner.close();
+  $('scanRefresh').onclick = ()=>{ Scanner.seq++; Scanner.loading = false; Scanner.refresh(false); };
+  $('scanOnly').onchange = ()=>{ Scanner.onlyContact = $('scanOnly').checked; Scanner.save(); Scanner.render(); };
+  $('scanSort').onchange = ()=>{ Scanner.sortContact = $('scanSort').checked; Scanner.save(); Scanner.render(); };
+  $('scanInt').onchange = ()=>{ Scanner.interval = +$('scanInt').value; Scanner.save(); Scanner.paintStatus(); Scanner.schedule(); };
+  $('scanTable').onclick = e=>{ const td = e.target.closest('td[data-sym]'); if (td) Scanner.openChart(td.dataset.sym, td.dataset.tf); };
+  window.addEventListener('hashchange', ()=>{ if (location.hash === '#scan') Scanner.open(); else Scanner.close(); });
+  document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible' && Scanner.on){ Scanner.seq++; Scanner.loading = false; Scanner.refresh(false); } });
+}
+
+/* =====================================================================
  *  以下はアプリ本体（通常は編集不要）
  * ===================================================================== */
 const MAX_PANELS  = 4;
@@ -1691,7 +2098,11 @@ class Panel {
     this.unsub = null; this.loadSeq = 0; this.rafPending = false; this.rafFull = false; this.fresh = false;
     this.gk = new GKPanel(this);
     // 右下の表をタップ・クリックすると詳細を開く
-    this.chart.subscribeClick(pt=>{ if (pt && pt.point && (pt.paneIndex ?? 0) === 0 && this.gk.hit(pt.point)) gkOpenDetail(this); });
+    this.chart.subscribeClick(pt=>{
+      if (!pt || !pt.point) return;
+      if (Replay.selecting){ Replay.pick(this, pt); return; }
+      if ((pt.paneIndex ?? 0) === 0 && this.gk.hit(pt.point)) gkOpenDetail(this);
+    });
     this.chart.subscribeCrosshairMove(p=>this.updateLegend(p && p.logical != null && p.time != null ? Math.round(p.logical) : null));
     this.selSym.onchange = ()=>onPanelSymbol(this, this.selSym.value);
     el.querySelector('.pmax').onclick = ()=>toggleMax(this.i);
@@ -1724,6 +2135,8 @@ class Panel {
   showMsg(t){ if (!t){ this.msgEl.classList.add('hidden'); return; } this.msgEl.innerHTML = t; this.msgEl.classList.remove('hidden'); }
 
   async load(){
+    if (Replay.active) return this.loadReplay();
+    this.replayFull = this.replayStep = null;
     const seq = ++this.loadSeq;
     if (this.unsub){ this.unsub(); this.unsub = null; }
     this.setQuote(null);
@@ -1743,6 +2156,39 @@ class Panel {
     this.fresh = true; this.render(true); this.fresh = false;
     if (bars.length) this.chart.timeScale().setVisibleLogicalRange({from: Math.max(0, bars.length - 120), to: bars.length + 14});
     this.unsub = G.src.subscribe(key, tf, (b,q)=>{ if (seq === this.loadSeq) this.onLive(b,q); }, ()=>this.reloadRecent(50));
+  }
+
+  /* ---- リプレイ ---- */
+  async loadReplay(){
+    const seq = ++this.loadSeq;
+    if (this.unsub){ this.unsub(); this.unsub = null; }
+    this.setQuote(null);
+    if (!this.sym){ this.bars = []; this.render(true); return; }
+    // ステップ足がこの画面の時間足より大きいときは、この時間足に合わせる
+    if (TF_SEC[this.tf] < Replay.stepSec()){ Replay.setStep(this.tf); return; }
+    this.showMsg('読み込み中…');
+    const key = this.sym.key;
+    let full, step;
+    try{ [full, step] = await Promise.all([Replay.get(key, this.tf), Replay.get(key, Replay.stepTf)]); }
+    catch(e){ if (seq === this.loadSeq) this.showMsg('データを読み込めませんでした<br><span class="note">' + esc(e.message) + '</span>'); return; }
+    if (seq !== this.loadSeq) return;
+    this.replayFull = full; this.replayStep = step;
+    this.digits = this.sym.digits;
+    this.candle.applyOptions({priceFormat: priceFormat(this.digits)});
+    this.clearIndicators();
+    this.bars = Replay.view(full, TF_SEC[this.tf], step, Replay.T);
+    this.showMsg(this.bars.length ? '' : 'この時刻より前のデータがありません');
+    this.gk.reset();
+    this.fresh = true; this.render(true); this.fresh = false;
+    const n = this.bars.length;
+    if (n) this.chart.timeScale().setVisibleLogicalRange({from: Math.max(0, n - 120), to: n + 14});
+  }
+  applyReplay(){
+    if (!this.replayFull) return;
+    const prev = this.bars, v = Replay.view(this.replayFull, TF_SEC[this.tf], this.replayStep, Replay.T);
+    this.bars = v;
+    const sameLast = prev.length && v.length === prev.length && v[v.length-1].t === prev[prev.length-1].t;
+    this.schedule(!sameLast);
   }
 
   onLive(b, q){
@@ -1788,12 +2234,17 @@ class Panel {
       this.clearIndicators(); this.updateLegend(null); this.gk.refresh(); return;
     }
     if (full){
-      const range = this.chart.timeScale().getVisibleLogicalRange();
+      const range = this.chart.timeScale().getVisibleLogicalRange(), prevLen = this.renderedLen || 0;
       this.candle.setData(bars.map(b=>this.toCandle(b)));
-      if (range && !this.fresh) this.chart.timeScale().setVisibleLogicalRange(range);
+      if (range && !this.fresh){
+        // 右端を見ているときは、増えた本数だけ表示範囲を右へずらす
+        const add = prevLen && bars.length > prevLen && range.to >= prevLen - 1.5 ? bars.length - prevLen : 0;
+        this.chart.timeScale().setVisibleLogicalRange({from: range.from + add, to: range.to + add});
+      }
     } else {
       this.candle.update(this.toCandle(bars[bars.length-1]));
     }
+    this.renderedLen = bars.length;
     this.renderIndicators(full);
     this.updateLegend(null);
     this.gk.refresh();
@@ -1904,7 +2355,7 @@ function buildLayout(){
   if (G.maxIdx >= n) G.maxIdx = -1;
   while (panels.length < n){ const p = new Panel(panels.length); panels.push(p); if (G.src) p.load(); }
   $('grid').className = 'n' + n;
-  paintMax(); paintLayout();
+  paintMax(); paintLayout(); paintReplay();
 }
 function paintLayout(){
   for (const b of $('layout').querySelectorAll('button')) b.className = +b.dataset.n === G.layout ? 'on' : '';
@@ -1946,7 +2397,8 @@ function showGlobalMsg(t){ const m = $('gmsg'); if (!t){ m.classList.add('hidden
 function setConn(ok){ G.conn = ok; paintStatus(); }
 function paintStatus(){
   let color = '#26a69a', text = '';
-  if (G.demo){ color = '#8a93a3'; text = 'デモ表示中'; }
+  if (Replay.active){ color = '#b9a8ff'; text = 'リプレイ中（ライブ更新は停止）'; }
+  else if (G.demo){ color = '#8a93a3'; text = 'デモ表示中'; }
   else if (!G.conn){ color = '#ef5350'; text = '接続が切れています（再接続中）'; }
   else if (!G.lastBeat){ color = '#8a93a3'; text = 'EAからのデータ待ち'; }
   else {
@@ -1977,11 +2429,12 @@ async function reloadSymbols(){
   G.symbols = syms;
   for (const p of panels) if (p.fillSymbols()) p.load();
   savePaneCfg();
+  if (Scanner.on){ Scanner.render(); Scanner.refresh(false); }
   showGlobalMsg(syms.length ? '' : '銘柄がありません<br><span class="note">MT5の気配値表示に銘柄を表示してください</span>');
 }
 
 /* ---------- 時刻表示・インジケーター ---------- */
-function paintTz(){ $('tz').textContent = G.tz === 'jst' ? '日本時間' : 'サーバー時間'; }
+function paintTz(){ $('tz').innerHTML = G.tz === 'jst' ? '日本<span class="txt">時間</span>' : 'サーバー<span class="txt">時間</span>'; }
 $('tz').onclick = ()=>{ G.tz = G.tz === 'jst' ? 'server' : 'jst'; store.set('tz', G.tz); paintTz(); panels.forEach(p=>p.schedule(true)); };
 
 function saveInd(){ store.set('ind', indState); }
@@ -2037,6 +2490,7 @@ $('cfgSave').onclick = ()=>{
 
 /* ---------- 起動 ---------- */
 async function start(db){
+  if (Replay.active || Replay.selecting) Replay.exit();
   if (G.src) G.src.closeAll();
   if (G.statusTimer){ clearInterval(G.statusTimer); G.statusTimer = null; }
   while (panels.length) panels.pop().destroy();
@@ -2047,20 +2501,22 @@ async function start(db){
   let syms;
   try{ G.db = db; syms = await src.symbols(); }
   catch(e){ setConn(false); showGlobalMsg('データベースに接続できませんでした<br><span class="note">' + esc(e.message) + '<br>⚙ からURLを確認してください</span>'); return; }
-  G.src = src; G.symbols = syms;
+  G.src = src; G.symbols = syms; Scanner.data = {}; Scanner.results = {};
   showGlobalMsg(syms.length ? '' : 'まだデータがありません<br><span class="note">VPSでEAが動いているか確認してください</span>');
   if (G.link){ const k = G.paneCfg[0].sym; for (const c of G.paneCfg) c.sym = k; }
   await refreshStatus();
   G.statusTimer = setInterval(refreshStatus, 15000);
   buildLayout();
   savePaneCfg();
+  if (location.hash === '#scan' || Scanner.on){ Scanner.on = false; Scanner.open(); }
 }
 setInterval(paintStatus, 5000);
 // スマホでアプリを切り替えて戻ったときは取り直す
 document.addEventListener('visibilitychange', ()=>{
-  if (document.visibilityState === 'visible' && G.src && !G.demo){ refreshStatus(); panels.forEach(p=>p.load()); }
+  if (document.visibilityState === 'visible' && G.src && !G.demo && !Replay.active){ refreshStatus(); panels.forEach(p=>p.load()); }
 });
 
+wireReplay(); wireScan();
 paintTz(); paintLayout(); paintGkBtn();
 start(store.get('db', '') || DEFAULT_DB_URL || 'demo');
 </script>
