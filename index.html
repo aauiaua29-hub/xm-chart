@@ -113,6 +113,7 @@
   #scanTable .sc-hit b{margin-left:4px} #scanTable .hit-up{background:rgba(0,188,212,.28)} #scanTable .hit-dn{background:rgba(239,83,80,.30)}
   #scanTable .sc-na,#scanTable .sc-wait{color:var(--muted)} .sc-empty{color:var(--muted);padding:20px!important}
   .sc-legend{padding:6px 10px 10px;margin:0}
+  #scanTable .dv{font-size:11px;margin-top:2px;font-weight:600} .dvu{color:#26c6da} .dvd{color:#ef5350} .dvp{opacity:.75;font-weight:400} #scanSummary b.dvc{color:#b9a8ff}
   @media (max-width:640px){ #scanBtn .txt{display:none} #scanTable th,#scanTable td{padding:7px 5px;font-size:12px} }
   /* リプレイ */
   #rpBar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;background:#1a1530;border-top:1px solid #4b3c8a}
@@ -147,6 +148,11 @@
   .gklane th{width:6.5em;text-align:left;color:var(--muted);font-weight:400;padding:3px 8px 3px 0;white-space:nowrap;vertical-align:top}
   .gklane td{padding:3px 0;font-variant-numeric:tabular-nums}
   .gklane td:last-child{text-align:right;white-space:nowrap}
+  .gksum{width:100%;border-collapse:collapse;font-size:13px;margin:4px 0 6px}
+  .gksum th,.gksum td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+  .gksum thead th{color:var(--muted);font-weight:400;font-size:12px}
+  .gksum tbody tr{cursor:pointer} .gksum tbody tr:hover{background:#1f2430}
+  .gksum td:last-child{white-space:normal;font-size:12px}
   .gkd{color:var(--muted);font-size:12px} .warn{color:var(--warn)} .gklane .contact{color:var(--warn)}
   .note{color:var(--muted);font-size:12px;line-height:1.6}
 </style>
@@ -171,6 +177,7 @@
       <button id="scanClose">← チャート</button>
       <div class="seg" id="scanTfs"></div>
       <label class="chip"><input type="checkbox" id="scanOnly">接触中のみ</label>
+      <label class="chip"><input type="checkbox" id="scanDiv">ダイバージェンスありのみ</label>
       <label class="chip"><input type="checkbox" id="scanSort">接触の多い順</label>
       <select id="scanInt" aria-label="自動更新">
         <option value="0">自動更新オフ</option><option value="15">15秒ごと</option><option value="30">30秒ごと</option><option value="60">60秒ごと</option>
@@ -180,7 +187,7 @@
     </div>
     <div id="scanSummary"></div>
     <div id="scanTable"></div>
-    <p class="note sc-legend">▲上昇 ▼下降　なし＝ZONEなし　数字＝現在値からZONEまでの距離（pips。↓はZONEが下、↑は上）　接触中＝その時間足の現在のローソク足がZONEにかかっている（初・2・3…＝このZONEへの何回目の接触か）　↑↑↑/↓↓↓＝直近の高値（安値）のあとZONEまで戻った　マスをタップするとチャートを開きます</p>
+    <p class="note sc-legend">▲上昇 ▼下降　なし＝ZONEなし　数字＝現在値からZONEまでの距離（pips。↓はZONEが下、↑は上）　接触中＝その時間足の現在のローソク足がZONEにかかっている（初・2・3…＝このZONEへの何回目の接触か）　↑↑↑/↓↓↓＝直近の高値（安値）のあとZONEまで戻った　R_Div/H_Div＝レギュラー/ヒドゥン・ダイバージェンス（RSI14、直近2つのSH同士・SL同士。▲強気 ▼弱気。(暫定)＝まだ確定していない今の安値・高値で判定、更新で変わる）　マスをタップするとチャートを開きます</p>
   </section>
   <div id="rpSel" class="hidden">開始位置にしたいローソク足をタップ <button id="rpSelCancel">キャンセル</button></div>
   <div id="rpNote" class="hidden"></div>
@@ -379,6 +386,8 @@ const INDICATORS = [
  *  ・上位足の位置は「時刻」で対応づけ。チャートに無い古い区間は上位足自体で代用
  * ===================================================================== */
 const GK_KEEP = 82;
+const GK_FETCH = 250;   // 上位足の読み込み本数（RSIの計算をなじませるため、判定用の82本より多く読む）
+const GK_RSI = 14;
 const NVAL = null, IVAL = -2147483648;
 function IsNA(x){ return x === null || x === undefined || (typeof x === 'number' && (x === IVAL || !isFinite(x))); }
 function PEq(a,b){ return !IsNA(a) && !IsNA(b) && a == b; }
@@ -437,6 +446,86 @@ function gkCountTouches(cands, top, bottom){
   return n;
 }
 function gkTouchLabel(n){ return n <= 1 ? '初' : String(n); }
+
+// ダイバージェンス：直近2つのSH同士・SL同士で、価格とRSI(14)の向きを比べる
+//   SL：安値切り下げ＋RSI切り上げ＝▲R_Div ／ 安値切り上げ＋RSI切り下げ＝▲H_Div
+//   SH：高値切り上げ＋RSI切り下げ＝▼R_Div ／ 高値切り下げ＋RSI切り上げ＝▼H_Div
+function gkDivergence(pivots, closedBars){
+  const out = [];
+  if (!pivots || !closedBars || !closedBars.length) return out;
+  const rsi = TA.rsi(closedBars.map(b=>b.c), GK_RSI), at = new Map(closedBars.map((b,i)=>[b.t, i]));
+  const pair = (type)=>{
+    const ps = pivots.filter(p=>p.type === type); if (ps.length < 2) return;
+    const a = ps[ps.length-2], b = ps[ps.length-1];
+    const ra = rsi[at.get(a.t)], rb = rsi[at.get(b.t)];
+    if (ra == null || rb == null || !isFinite(ra) || !isFinite(rb)) return;
+    const d = {base: type === 1 ? 'SH' : 'SL', t1:a.t, t2:b.t, p1:a.price, p2:b.price, r1:ra, r2:rb};
+    if (type === 1){
+      if (b.price > a.price && rb < ra) out.push({...d, kind:'R', bull:false});
+      if (b.price < a.price && rb > ra) out.push({...d, kind:'H', bull:false});
+    } else {
+      if (b.price < a.price && rb > ra) out.push({...d, kind:'R', bull:true});
+      if (b.price > a.price && rb < ra) out.push({...d, kind:'H', bull:true});
+    }
+  };
+  pair(-1); pair(1);
+  return out;
+}
+function gkDivLabel(d){ return (d.bull ? '▲' : '▼') + d.kind + '_Div' + (d.prov ? '(暫定)' : ''); }
+
+// RSI（Pineの ta.rsi と同じ）。形成中の足を後から足せるよう、最後の平均値も返す
+function gkRsiSeries(closes, n){
+  const out = new Array(closes.length).fill(null); let au = null, ad = null, su = 0, sd = 0;
+  for (let i = 1; i < closes.length; i++){
+    const ch = closes[i] - closes[i-1], u = Math.max(ch, 0), d = Math.max(-ch, 0);
+    if (au === null){ su += u; sd += d; if (i === n){ au = su / n; ad = sd / n; } else continue; }
+    else { au = (au * (n - 1) + u) / n; ad = (ad * (n - 1) + d) / n; }
+    out[i] = ad === 0 ? 100 : au === 0 ? 0 : 100 - 100 / (1 + au / ad);
+  }
+  return {rsi:out, au, ad, last: closes.length ? closes[closes.length-1] : null};
+}
+function gkRsiNext(st, close, n){
+  if (st.au === null || st.last === null) return null;
+  const ch = close - st.last, au = (st.au * (n - 1) + Math.max(ch, 0)) / n, ad = (st.ad * (n - 1) + Math.max(-ch, 0)) / n;
+  return ad === 0 ? 100 : au === 0 ? 0 : 100 - 100 / (1 + au / ad);
+}
+// 暫定ダイバージェンス：直近の反対側の転換点（登録済み or 登録待ち）より後の最安値（最高値）＝暫定SL（SH）を、
+// 登録済みの直近SL（SH）と比べる。形成中の足を含み、RSIはその足の値（形成中なら今の値）。
+function gkDivProvisional(pivots, pending, closed, rs, forming){
+  const res = {div:[], ext:[]};
+  if (!pivots || !closed || !closed.length || !rs) return res;
+  const seq = forming ? closed.concat([forming]) : closed;
+  const rsi = forming ? rs.rsi.concat([gkRsiNext(rs, forming.c, GK_RSI)]) : rs.rsi;
+  const at = new Map(closed.map((b,i)=>[b.t, i]));
+  for (const type of [-1, 1]){
+    const reg = pivots.filter(p=>p.type === type); if (!reg.length) continue;
+    const prev = reg[reg.length-1];
+    const opp = pivots.filter(p=>p.type === -type).map(p=>p.t);
+    if (pending && pending.type === -type) opp.push(pending.t);
+    if (!opp.length) continue;
+    const after = Math.max(...opp);
+    if (after <= prev.t) continue;
+    let k = -1;
+    for (let i = 0; i < seq.length; i++){
+      if (seq[i].t <= after) continue;
+      if (k < 0 || (type === -1 ? seq[i].l <= seq[k].l : seq[i].h >= seq[k].h)) k = i;
+    }
+    if (k < 0) continue;
+    const price = type === -1 ? seq[k].l : seq[k].h, ri = at.get(prev.t);
+    const r1 = ri == null ? null : rsi[ri], r2 = rsi[k];
+    res.ext.push({t:seq[k].t, type, price});
+    if (r1 == null || r2 == null || !isFinite(r1) || !isFinite(r2)) continue;
+    const d = {base:(type === 1 ? 'SH' : 'SL') + '(暫定)', t1:prev.t, t2:seq[k].t, p1:prev.price, p2:price, r1, r2, prov:true};
+    if (type === -1){
+      if (price < prev.price && r2 > r1) res.div.push({...d, kind:'R', bull:true});
+      if (price > prev.price && r2 < r1) res.div.push({...d, kind:'H', bull:true});
+    } else {
+      if (price > prev.price && r2 < r1) res.div.push({...d, kind:'R', bull:false});
+      if (price < prev.price && r2 > r1) res.div.push({...d, kind:'H', bull:false});
+    }
+  }
+  return res;
+}
 
 function gkResetState(){
   return {
@@ -560,6 +649,13 @@ class GKEngine {
     this.dataError = true; return IVAL;
   }
 
+  // 暫定ダイバージェンス（forming＝その時間足の形成中の足）
+  provisional(forming){
+    const r = gkDivProvisional(this.pivots, this.pending, this.closedSrc, this.rsiState, forming);
+    this.divP = r.div; this.provExt = r.ext;
+    return r;
+  }
+
   // 今のZONEへの接触回数（その時間足のローソク足で数える。cur＝現在の足）
   touchCount(cur){
     const v = this.st, sec = this.cfg.minutes * 60;
@@ -607,6 +703,11 @@ class GKEngine {
       this.Zones();
     }
     st.First = false; st.hyouji = true; st.last_closed = this.htf[0].t; st.anchor = now;
+    this.closedSrc = (this.src || []).slice(0, -1);
+    this.div = gkDivergence(this.pivots, this.closedSrc);
+    this.rsiState = gkRsiSeries(this.closedSrc.map(b=>b.c), GK_RSI);
+    const pb = !IsNA(st.pendingIdx) ? this.htf[st.pendingIdx] : null;
+    this.pending = pb && !IsNA(st.pendingType) ? {t:pb.t, type:st.pendingType, price: st.pendingType === 1 ? pb.h : pb.l} : null;
   }
 
   Realtime(){
@@ -1204,7 +1305,7 @@ class GKPanel {
       if (this.fetching[tf]) continue;
       this.fetching[tf] = true;
       try{
-        const bars = Replay.active ? await Replay.get(sym.key, tf) : await G.src.history(sym.key, tf, GK_KEEP + 8);
+        const bars = Replay.active ? await Replay.get(sym.key, tf) : await G.src.history(sym.key, tf, GK_FETCH);
         if (seq !== this.seq) return;
         this.htf[tf] = bars;
       }catch(e){}
@@ -1268,10 +1369,10 @@ class GKPanel {
   hit(pt){ const r = this.panelRect; return !!(r && pt.x >= r.x1 && pt.x <= r.x2 && pt.y >= r.y1 && pt.y <= r.y2); }
 
   /* ---- 詳細（右下の表をタップしたとき） ---- */
-  detailHTML(){
+  detailHTML(rows){
     const d = this.p.digits, last = this.p.bars[this.p.bars.length-1];
     if (!last) return '<p class="note">データがありません</p>';
-    const price = last.c, f = v => IsNA(v) ? '-' : (+v).toFixed(d);
+    const price = last.c, d0 = d, f = v => IsNA(v) ? '-' : (+v).toFixed(d);
     const pipMul = d === 3 || d === 5 ? Math.pow(10, d-1) : Math.pow(10, d), unit = d === 3 || d === 5 ? 'pips' : 'pt';
     const dist = v => {
       if (IsNA(v)) return '';
@@ -1279,16 +1380,36 @@ class GKPanel {
       return `<span class="gkd">${x >= 0 ? '+' : '−'}${unit === 'pips' ? a.toFixed(1) : Math.round(a)} ${unit}</span>`;
     };
     const row = (k, v, extra='') => `<tr><th>${k}</th><td>${v}</td><td>${extra}</td></tr>`;
-    const names = ['第1系統','第2系統','第3系統'];
     let html = `<p class="note">現在値（Bid） <b>${f(price)}</b>　距離は現在値からの差（上が＋）</p>`;
-    this.engines.forEach((e, i)=>{
-      const v = e.st, c = e.cfg, dir = v.trendDirection, tf = gkTFText(c.minutes || TF_SEC[this.p.tf]/60);
+    // 要約（7系統を1行ずつ）
+    html += '<table class="gksum"><thead><tr><th>時間足</th><th>ダウ</th><th>ZONE</th><th>ダイバージェンス</th></tr></thead><tbody>';
+    rows.forEach((r, i)=>{
+      const e = r.e, v = e.st, dir = v.trendDirection;
+      const trend = !e.ready ? `<span class="gkd">${esc(e.status.replace(/（.*）/, ''))}</span>` :
+        dir === 1 ? '<span class="dvu">▲上昇</span>' : dir === -1 ? '<span class="dvd">▼下降</span>' : '<span class="gkd">NONE</span>';
+      let zone = '-';
+      if (e.ready && (dir === 1 || dir === -1)){
+        const mark = dir === 1 && v.alertedL ? '↑↑↑' : dir === -1 && v.alertedS ? '↓↓↓' : '';
+        zone = v.Zonecount > 0 ? (e.contact ? `<b class="contact">接触中（${gkTouchLabel(e.touches)}）</b>` : '') + (mark ? ` ${mark}` : '') || 'なし' : 'なし';
+        if (v.Zonecount > 0 && !e.contact && !mark) zone = '未到達';
+      }
+      const dv = e.ready ? (e.div || []).concat(e.divP || []) : [];
+      html += `<tr data-goto="gkl${i}"><th>${r.title}</th><td>${trend}</td><td>${zone}</td><td>${dv.map(x=>`<span class="${x.bull ? 'dvu' : 'dvd'}${x.prov ? ' dvp' : ''}">${gkDivLabel(x)}</span>`).join(' ') || '-'}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    rows.forEach((r, i)=>{
+      const e = r.e, v = e.st, c = e.cfg, dir = v.trendDirection, tf = gkTFText(c.minutes || TF_SEC[this.p.tf]/60);
       const up = dir === 1, down = dir === -1;
       const trend = up ? '上昇' : down ? '下降' : 'NONE';
       const col = up ? GK_COLORS.panelUp : down ? GK_COLORS.panelDown : GK_COLORS.panelNone;
-      html += `<section class="gklane"><h3><span>${tf}</span><small>${names[i]}</small>`;
+      html += `<section class="gklane" id="gkl${i}"><h3><span>${r.title}</span><small>${r.sub || ''}</small>`;
       if (!e.ready){ html += `<em style="color:${GK_COLORS.panelNone}">${esc(e.status)}</em></h3></section>`; return; }
       html += `<em style="color:${col}">ダウ: ${trend}</em></h3><table>`;
+      const dv = (e.div || []).concat(e.divP || []);
+      html += row('ダイバージェンス', dv.length ? dv.map(d=>{
+        const pd = x => IsNA(x) ? '-' : (+x).toFixed(d0);
+        return `<b class="${d.bull ? 'dvu' : 'dvd'}">${gkDivLabel(d)}</b> <span class="gkd">${d.prov ? d.base.replace('(暫定)', '') + ' ' + pd(d.p1) + '→暫定 ' + pd(d.p2) : d.base + ' ' + pd(d.p1) + '→' + pd(d.p2)}　RSI ${d.r1.toFixed(1)}→${d.r2.toFixed(1)}</span>`;
+      }).join('<br>') + (dv.some(d=>d.prov) ? '<br><span class="gkd">(暫定)は形成中の安値・高値で判定。更新されると変わります</span>' : '') : 'なし', '');
       if (up || down){
         html += row(up ? '高値' : '安値', f(up ? v.takane : v.yasune), dist(up ? v.takane : v.yasune));
         html += row(up ? '押し安値' : '戻り高値', f(up ? v.minlow : v.maxhigh), dist(up ? v.minlow : v.maxhigh) +
@@ -1319,13 +1440,15 @@ class GKPanel {
 
   // 接触中：その時間足の現在のローソク足が、ZONEに一部でもかかっている
   updateContact(e){
-    e.contact = false; e.candle = null; e.touches = 0;
+    e.contact = false; e.candle = null; e.touches = 0; e.divP = []; e.provExt = [];
     if (!e.ready) return;
     const bars = this.p.bars, sec = e.cfg.minutes * 60, start = Math.floor(this.currentBar / sec) * sec;
     let h = -Infinity, l = Infinity;
     for (let k = bars.length - 1; k >= 0 && bars[k].t >= start; k--){ h = Math.max(h, bars[k].h); l = Math.min(l, bars[k].l); }
     if (!isFinite(h)) return;
     e.candle = {h, l, t:start};
+    // 形成中の足（上位足の系統はチャートの足から組み立てる）で暫定ダイバージェンス
+    e.provisional({t:start, h, l, c:bars[bars.length-1].c, o:bars[bars.length-1].o});
     const v = e.st;
     if ((v.trendDirection === 1 || v.trendDirection === -1) && v.Zonecount > 0){
       e.contact = PLe(l, v.Zonetop) && PGe(h, v.Zonebottom);
@@ -1403,6 +1526,10 @@ class GKPanel {
       const find = t=>{ let lo = 0, hi = bars.length - 1; while (lo <= hi){ const mid = (lo + hi) >> 1; if (bars[mid].t === t) return mid; if (bars[mid].t < t) lo = mid + 1; else hi = mid - 1; } return -1; };
       this.engines.forEach((e, i)=>{
         if (!e.ready || !e.cfg.enabled || S.lanes[i].tf !== 'CUR' || !e.pivots) return;
+        for (const pv of (e.provExt || [])){
+          const li = find(pv.t);
+          if (li >= 0 && !m.swings.some(x=>x.li === li && x.high === (pv.type === 1))) m.swings.push({li, price:pv.price, high:pv.type === 1, prov:true});
+        }
         for (const pv of e.pivots){
           const li = find(pv.t);
           if (li >= 0 && !m.swings.some(x=>x.li === li && x.high === (pv.type === 1))) m.swings.push({li, price:pv.price, high:pv.type === 1});
@@ -1500,9 +1627,9 @@ class GKPanel {
         ctx.save(); ctx.font = `bold ${small ? 9 : 11}px sans-serif`; ctx.textAlign = 'center';
         for (const s of m.swings){
           const x = X(s.li), y = Y(s.price); if (x == null || y == null) continue;
-          ctx.fillStyle = s.high ? '#ff6b6b' : '#4dd0e1';
+          ctx.fillStyle = s.high ? (s.prov ? 'rgba(255,107,107,.5)' : '#ff6b6b') : (s.prov ? 'rgba(77,208,225,.5)' : '#4dd0e1');
           ctx.textBaseline = s.high ? 'bottom' : 'top';
-          ctx.fillText(s.high ? 'SH' : 'SL', x, s.high ? y - 3 : y + 3);
+          ctx.fillText((s.high ? 'SH' : 'SL') + (s.prov ? '?' : ''), x, s.high ? y - 3 : y + 3);
         }
         ctx.restore();
         ctx.font = `${small ? 10 : 12}px sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
@@ -1528,14 +1655,86 @@ class GKPanel {
   }
 }
 
-/* ---------- 右下の表の詳細画面 ---------- */
+/* ---------- 1つの時間足を、その時間足のローソク足だけで計算（詳細・一覧で共通） ---------- */
+function gkLaneCompute(bars, tf){
+  const sec = TF_SEC[tf], e = new GKEngine(0);
+  e.cfg = {tf, minutes:sec/60, enabled:true, showPullback:true, showExtremes:true, showZone:true, horizontal:false, horizontalBars:50};
+  e.ready = false; e.contact = false; e.touches = 0; e.div = []; e.divP = []; e.candle = null;
+  if (!bars || bars.length < GK_KEEP + 1){ e.status = '履歴待機'; return e; }
+  if (!e.loadHTF({chart:bars, chartSec:sec, htf:{}})) return e;
+  const last = bars[bars.length-1];
+  e.Rebuild(last.t);
+  if (e.dataError){ e.status = 'エラー'; return e; }
+  e.Realtime();
+  const v = e.st, dir = v.trendDirection, hasZone = (dir === 1 || dir === -1) && v.Zonecount > 0;
+  // ZONE到達（↑↑↑/↓↓↓）：直近の高値（安値）のあとZONEまで戻ったか
+  if (hasZone && dir === 1 && v.alerttakaneindex > 0){
+    let lo = v.alerttakane; for (let n = 0; n < v.alerttakaneindex; n++) if (PGt(lo, e.CL(n))) lo = e.CL(n);
+    v.alertedL = PGe(v.Zonetop, lo);
+  } else if (hasZone && dir === -1 && v.alertyasuneindex > 0){
+    let hi = v.alertyasune; for (let n = 0; n < v.alertyasuneindex; n++) if (PLt(hi, e.CH(n))) hi = e.CH(n);
+    v.alertedS = PLe(v.Zonebottom, hi);
+  }
+  e.candle = {h:last.h, l:last.l, t:last.t};
+  e.contact = hasZone && PLe(last.l, v.Zonetop) && PGe(last.h, v.Zonebottom);
+  e.touches = hasZone ? e.touchCount(last) : 0;
+  e.provisional(last);
+  e.ready = true; e.status = 'OK';
+  return e;
+}
+
+/* ---------- 右下の表の詳細画面（現在足＋5m〜1Dの7系統） ---------- */
+const GKD_TFS = ['M5','M15','M30','H1','H4','D1'];
 let gkDetailPanel = null;
-function gkOpenDetail(panel){ gkDetailPanel = panel; gkRenderDetail(); $('gkModal').classList.remove('hidden'); }
-function gkCloseDetail(){ gkDetailPanel = null; $('gkModal').classList.add('hidden'); }
+const GKDetail = {
+  data:{}, unsubs:[], seq:0, key:null,
+  open(panel){
+    this.close();
+    const seq = ++this.seq, key = panel.sym.key; this.key = key; this.data = {};
+    for (const tf of GKD_TFS){
+      this.load(tf, seq);
+      if (!Replay.active) this.unsubs.push(G.src.subscribe(key, tf, b=>this.onBar(tf, b, seq), ()=>this.load(tf, seq)));
+    }
+  },
+  async load(tf, seq){
+    try{
+      const bars = Replay.active ? await Replay.get(this.key, tf) : await G.src.history(this.key, tf, GK_FETCH);
+      if (seq !== this.seq) return;
+      this.data[tf] = Replay.active ? bars : bars.slice();
+      this.renderSoon();
+    }catch(e){}
+  },
+  onBar(tf, b, seq){
+    const bars = this.data[tf]; if (seq !== this.seq || !bars || !bars.length) return;
+    const last = bars[bars.length-1];
+    if (b.t === last.t) bars[bars.length-1] = b;
+    else if (b.t > last.t){ bars.push(b); this.load(tf, seq); }
+    this.renderSoon();
+  },
+  close(){ this.seq++; for (const u of this.unsubs) u(); this.unsubs = []; this.data = {}; },
+  renderSoon(){ if (this.raf) return; this.raf = requestAnimationFrame(()=>{ this.raf = null; gkRenderDetail(); }); },
+  rows(p){
+    const out = [{e:gkLaneCompute(p.bars, p.tf), title:'現在足', sub:p.tf}];
+    for (const tf of GKD_TFS){
+      let bars = this.data[tf];
+      if (bars && Replay.active) bars = Replay.view(bars, TF_SEC[tf], p.replayStep, Replay.T);
+      const e = gkLaneCompute(bars, tf);
+      if (!this.data[tf]) e.status = '読込中';
+      else if (!e.ready && Replay.active) e.status = 'この時刻のデータなし（保存範囲外）';
+      out.push({e, title:gkTFText(TF_SEC[tf]/60), sub:''});
+    }
+    return out;
+  },
+};
+function gkOpenDetail(panel){
+  gkDetailPanel = panel; GKDetail.open(panel); gkRenderDetail();
+  $('gkModal').classList.remove('hidden'); $('gkModal').querySelector('.sheet').scrollTop = 0;
+}
+function gkCloseDetail(){ gkDetailPanel = null; GKDetail.close(); $('gkModal').classList.add('hidden'); }
 function gkRenderDetail(){
   const p = gkDetailPanel; if (!p || !p.sym) return;
-  $('gkTitle').textContent = `GK_ZONE 詳細　${p.sym.name} · ${p.tf}`;
-  $('gkDetail').innerHTML = p.gk.detailHTML();
+  $('gkTitle').textContent = `GK_ZONE 詳細　${p.sym.name} · ${p.tf}` + (Replay.active ? '（リプレイ）' : '');
+  $('gkDetail').innerHTML = p.gk.detailHTML(GKDetail.rows(p));
 }
 
 /* ---------- GK_ZONE の詳細設定（指標画面の中） ---------- */
@@ -1763,39 +1962,23 @@ function wireReplay(){
  *  ・接触中＝その時間足の現在のローソク足がZONEに一部でもかかっている
  * ===================================================================== */
 function gkScanCompute(bars, tf){
-  const sec = TF_SEC[tf];
-  if (!bars || bars.length < GK_KEEP + 1) return {ok:false, status:'履歴待機'};
-  const e = new GKEngine(0);
-  e.cfg = {tf, minutes:sec/60, enabled:true, showPullback:true, showExtremes:true, showZone:true, horizontal:false, horizontalBars:50};
-  if (!e.loadHTF({chart:bars, chartSec:sec, htf:{}})) return {ok:false, status:e.status};
-  const last = bars[bars.length-1];
-  e.Rebuild(last.t);
-  if (e.dataError) return {ok:false, status:'エラー'};
-  e.Realtime();
-  const v = e.st, dir = v.trendDirection, hasZone = (dir === 1 || dir === -1) && v.Zonecount > 0;
-  let reached = false;
-  if (hasZone && dir === 1 && v.alerttakaneindex > 0){
-    let lo = v.alerttakane; for (let n = 0; n < v.alerttakaneindex; n++) if (PGt(lo, e.CL(n))) lo = e.CL(n);
-    reached = PGe(v.Zonetop, lo);
-  } else if (hasZone && dir === -1 && v.alertyasuneindex > 0){
-    let hi = v.alertyasune; for (let n = 0; n < v.alertyasuneindex; n++) if (PLt(hi, e.CH(n))) hi = e.CH(n);
-    reached = PLe(v.Zonebottom, hi);
-  }
-  const contact = hasZone && PLe(last.l, v.Zonetop) && PGe(last.h, v.Zonebottom);
-  const touches = hasZone ? e.touchCount(last) : 0;
-  return {ok:true, dir, hasZone, zt:v.Zonetop, zb:v.Zonebottom, contact, reached, price:last.c, touches};
+  const x = gkLaneCompute(bars, tf);
+  if (!x.ready) return {ok:false, status:x.status};
+  const v = x.st, dir = v.trendDirection;
+  return {ok:true, dir, hasZone:(dir === 1 || dir === -1) && v.Zonecount > 0, zt:v.Zonetop, zb:v.Zonebottom,
+          contact:x.contact, reached: dir === 1 ? v.alertedL : dir === -1 ? v.alertedS : false,
+          price:bars[bars.length-1].c, touches:x.touches, div:(x.div || []).concat(x.divP || [])};
 }
-
 const Scanner = {
   on:false, loading:false, timer:null, lastUpdate:null, seq:0,
   tfs: null, onlyContact:false, sortContact:false, interval:30,
   data:{}, results:{},
   init(){
     this.tfs = store.get('scanTfs', ['M5','M15','H1','H4','D1']).filter(t=>TIMEFRAMES.includes(t));
-    this.onlyContact = store.get('scanOnly', false); this.sortContact = store.get('scanSort', false);
+    this.onlyContact = store.get('scanOnly', false); this.sortContact = store.get('scanSort', false); this.onlyDiv = store.get('scanDiv', false);
     this.interval = store.get('scanInt', 30);
   },
-  save(){ store.set('scanTfs', this.tfs); store.set('scanOnly', this.onlyContact); store.set('scanSort', this.sortContact); store.set('scanInt', this.interval); },
+  save(){ store.set('scanDiv', this.onlyDiv); store.set('scanTfs', this.tfs); store.set('scanOnly', this.onlyContact); store.set('scanSort', this.sortContact); store.set('scanInt', this.interval); },
 
   open(){
     if (this.on) return;
@@ -1832,7 +2015,7 @@ const Scanner = {
         const lb = live[tf] && live[tf].t ? {t:+live[tf].t, o:+live[tf].o, h:+live[tf].h, l:+live[tf].l, c:+live[tf].c, v:+(live[tf].v||0)} : null;
         // 初回、または新しい足ができたときは履歴を取り直す
         if (!bars || (lb && lb.t > bars[bars.length-1].t)){
-          try{ bars = d[tf] = await G.src.history(s.key, tf, GK_KEEP + 8); }catch(e){ bars = null; }
+          try{ bars = d[tf] = await G.src.history(s.key, tf, GK_FETCH); }catch(e){ bars = null; }
         }
         if (bars && lb){
           if (lb.t === bars[bars.length-1].t) bars[bars.length-1] = lb;
@@ -1862,7 +2045,7 @@ const Scanner = {
       };
       box.appendChild(b);
     }
-    $('scanOnly').checked = this.onlyContact; $('scanSort').checked = this.sortContact; $('scanInt').value = String(this.interval);
+    $('scanOnly').checked = this.onlyContact; $('scanSort').checked = this.sortContact; $('scanDiv').checked = this.onlyDiv; $('scanInt').value = String(this.interval);
   },
   paintStatus(text){
     const t = this.lastUpdate, p2 = n=>String(n).padStart(2,'0');
@@ -1876,14 +2059,15 @@ const Scanner = {
     const arrow = r.dir === 1 ? '<span class="up">▲</span>' : r.dir === -1 ? '<span class="dn">▼</span>' : '<span class="na">–</span>';
     const mark = r.reached ? `<span class="${r.dir === 1 ? 'up' : 'dn'} mk">${r.dir === 1 ? '↑↑↑' : '↓↓↓'}</span>` : '';
     const attrs = `data-sym="${esc(sym.key)}" data-tf="${tf}"`;
-    if (r.contact) return `<td ${attrs} class="sc-hit ${r.dir === 1 ? 'hit-up' : 'hit-dn'}">${arrow}<b>接触中（${gkTouchLabel(r.touches)}）</b>${mark}</td>`;
+    const dv = r.div && r.div.length ? '<div class="dv">' + r.div.map(d=>`<span class="${d.bull ? 'dvu' : 'dvd'}${d.prov ? ' dvp' : ''}">${gkDivLabel(d)}</span>`).join(' ') + '</div>' : '';
+    if (r.contact) return `<td ${attrs} class="sc-hit ${r.dir === 1 ? 'hit-up' : 'hit-dn'}">${arrow}<b>接触中（${gkTouchLabel(r.touches)}）</b>${mark}${dv}</td>`;
     let txt = 'なし';
     if (r.hasZone){
       const dist = r.price > r.zt ? r.price - r.zt : r.zb - r.price;
       const n = dist * mul;
       txt = (unit ? Math.round(n) + unit : n.toFixed(1)) + (r.price > r.zt ? '↓' : '↑');
     }
-    return `<td ${attrs}>${arrow}<span class="dist">${r.dir === 0 ? '' : txt}</span>${mark}</td>`;
+    return `<td ${attrs}>${arrow}<span class="dist">${r.dir === 0 ? '' : txt}</span>${mark}${dv}</td>`;
   },
   render(){
     if (!this.on) return;
@@ -1892,10 +2076,14 @@ const Scanner = {
     if (this.onlyContact) syms = syms.filter(s=>hits(s) > 0);
     if (this.sortContact) syms.sort((a,b)=>hits(b) - hits(a) || a.order - b.order);
     const total = G.symbols.reduce((n,s)=>n + hits(s), 0);
-    $('scanSummary').innerHTML = `接触中 <b>${total}</b> 件` + (total ? '：' + G.symbols.flatMap(s=>this.tfs.filter(tf=>((this.results[s.key] || {})[tf] || {}).contact).map(tf=>`${esc(s.name)} ${tf}（${gkTouchLabel(this.results[s.key][tf].touches)}）`)).join('、') : '');
+    const dl = (s, tf)=>(((this.results[s.key] || {})[tf] || {}).div || []);
+    const divs = G.symbols.reduce((n,s)=>n + this.tfs.filter(tf=>dl(s, tf).some(d=>!d.prov)).length, 0);
+    const divsP = G.symbols.reduce((n,s)=>n + this.tfs.filter(tf=>dl(s, tf).some(d=>d.prov)).length, 0);
+    if (this.onlyDiv) syms = syms.filter(s=>this.tfs.some(tf=>(((this.results[s.key] || {})[tf] || {}).div || []).length));
+    $('scanSummary').innerHTML = `ダイバージェンス 確定 <b class="dvc">${divs}</b> 件・暫定 <b class="dvc">${divsP}</b> 件　／　接触中 <b>${total}</b> 件` + (total ? '：' + G.symbols.flatMap(s=>this.tfs.filter(tf=>((this.results[s.key] || {})[tf] || {}).contact).map(tf=>`${esc(s.name)} ${tf}（${gkTouchLabel(this.results[s.key][tf].touches)}）`)).join('、') : '');
     let html = '<table><thead><tr><th>銘柄</th>' + this.tfs.map(t=>`<th>${t}</th>`).join('') + '</tr></thead><tbody>';
     for (const s of syms) html += `<tr><th>${esc(s.name)}</th>` + this.tfs.map(tf=>this.cell(s, tf)).join('') + '</tr>';
-    if (!syms.length) html += `<tr><td colspan="${this.tfs.length + 1}" class="sc-empty">${this.onlyContact ? '接触中の銘柄はありません' : '銘柄がありません'}</td></tr>`;
+    if (!syms.length) html += `<tr><td colspan="${this.tfs.length + 1}" class="sc-empty">${this.onlyContact || this.onlyDiv ? '条件に合う銘柄はありません' : '銘柄がありません'}</td></tr>`;
     $('scanTable').innerHTML = html + '</tbody></table>';
     if (!this.loading) this.paintStatus();
   },
@@ -1915,6 +2103,7 @@ function wireScan(){
   $('scanClose').onclick = ()=>Scanner.close();
   $('scanRefresh').onclick = ()=>{ Scanner.seq++; Scanner.loading = false; Scanner.refresh(false); };
   $('scanOnly').onchange = ()=>{ Scanner.onlyContact = $('scanOnly').checked; Scanner.save(); Scanner.render(); };
+  $('scanDiv').onchange = ()=>{ Scanner.onlyDiv = $('scanDiv').checked; Scanner.save(); Scanner.render(); };
   $('scanSort').onchange = ()=>{ Scanner.sortContact = $('scanSort').checked; Scanner.save(); Scanner.render(); };
   $('scanInt').onchange = ()=>{ Scanner.interval = +$('scanInt').value; Scanner.save(); Scanner.paintStatus(); Scanner.schedule(); };
   $('scanTable').onclick = e=>{ const td = e.target.closest('td[data-sym]'); if (td) Scanner.openChart(td.dataset.sym, td.dataset.tf); };
@@ -2533,6 +2722,7 @@ function buildIndList(){
   }
 }
 $('gkClose').onclick = gkCloseDetail;
+$('gkDetail').onclick = e=>{ const tr = e.target.closest('tr[data-goto]'); if (tr){ const el = document.getElementById(tr.dataset.goto); if (el) el.scrollIntoView({behavior:'smooth', block:'start'}); } };
 $('gkModal').onclick = e=>{ if (e.target.id === 'gkModal') gkCloseDetail(); };
 $('indBtn').onclick = ()=>{ buildIndList(); $('indModal').classList.remove('hidden'); };
 $('indClose').onclick = ()=>$('indModal').classList.add('hidden');
