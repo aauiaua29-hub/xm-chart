@@ -2353,7 +2353,13 @@ class Panel {
       if (Replay.selecting){ Replay.pick(this, pt); return; }
       if ((pt.paneIndex ?? 0) === 0 && this.gk.hit(pt.point)) gkOpenDetail(this);
     });
-    this.chart.subscribeCrosshairMove(p=>this.updateLegend(p && p.logical != null && p.time != null ? Math.round(p.logical) : null));
+    this.chart.subscribeCrosshairMove(p=>{
+      const idx = p && p.logical != null && p.time != null ? Math.round(p.logical) : null;
+      if (!CrossSync.busy) this.hoverIdx = idx;
+      this.updateLegend(idx);
+      // 自分の画面で動かしたときだけ、ほかの画面へ伝える（伝えた先からは返さない）
+      if (!CrossSync.busy) CrossSync.broadcast(this, p, idx);
+    });
     this.selSym.onchange = ()=>onPanelSymbol(this, this.selSym.value);
     el.querySelector('.pmax').onclick = ()=>toggleMax(this.i);
     this.buildTf(); this.fillSymbols();
@@ -2385,6 +2391,7 @@ class Panel {
   showMsg(t){ if (!t){ this.msgEl.classList.add('hidden'); return; } this.msgEl.innerHTML = t; this.msgEl.classList.remove('hidden'); }
 
   async load(){
+    this.hoverIdx = null;
     if (Replay.active) return this.loadReplay();
     this.replayFull = this.replayStep = null;
     const seq = ++this.loadSeq;
@@ -2410,6 +2417,7 @@ class Panel {
 
   /* ---- リプレイ ---- */
   async loadReplay(){
+    this.hoverIdx = null;
     const seq = ++this.loadSeq;
     if (this.unsub){ this.unsub(); this.unsub = null; }
     this.setQuote(null);
@@ -2481,7 +2489,7 @@ class Panel {
     const bars = this.bars;
     if (!bars.length){
       this.candle.setData([]); this.markerApi.setMarkers([]); this.markersKey = ''; this.indLines = [];
-      this.clearIndicators(); this.updateLegend(null); this.gk.refresh(); return;
+      this.clearIndicators(); this.updateLegend(this.hoverIdx); this.gk.refresh(); return;
     }
     if (full){
       const range = this.chart.timeScale().getVisibleLogicalRange(), prevLen = this.renderedLen || 0;
@@ -2496,7 +2504,7 @@ class Panel {
     }
     this.renderedLen = bars.length;
     this.renderIndicators(full);
-    this.updateLegend(null);
+    this.updateLegend(this.hoverIdx);
     this.gk.refresh();
   }
 
@@ -2569,7 +2577,7 @@ class Panel {
     if (!this.askLine)
       this.askLine = this.candle.createPriceLine({price:q.a, color:'#8a93a3', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Ask'});
     else this.askLine.applyOptions({price:q.a});
-    if (!this.rafPending) this.updateLegend(null);
+    if (!this.rafPending) this.updateLegend(this.hoverIdx);
   }
 
   updateLegend(idx){
@@ -2593,6 +2601,39 @@ class Panel {
     this.chart.remove(); this.el.remove();
   }
 }
+
+/* ---------- 十字線の連動（2画面以上） ----------
+ * カーソルを置いた足の時刻を、ほかの画面ではその時刻を含む足に合わせる */
+const CrossSync = {
+  busy:false,
+  barAt(p, t){   // t（サーバー時間）を含む足
+    const b = p.bars; let lo = 0, hi = b.length - 1, k = -1;
+    while (lo <= hi){ const m = (lo + hi) >> 1; if (b[m].t <= t){ k = m; lo = m + 1; } else hi = m - 1; }
+    if (k < 0 || t >= b[k].t + TF_SEC[p.tf]) return -1;
+    return k;
+  },
+  broadcast(src, param, idx){
+    if (panels.length < 2) return;
+    let t = null, price = null;
+    if (idx != null && idx >= 0 && idx < src.bars.length && param.point){
+      t = src.bars[idx].t;
+      price = src.candle.coordinateToPrice(param.point.y);
+    }
+    this.busy = true;
+    try{
+      for (const p of panels){
+        if (p === src) continue;
+        const k = t == null ? -1 : this.barAt(p, t);
+        if (k < 0){ p.hoverIdx = null; p.chart.clearCrosshairPosition(); p.updateLegend(null); continue; }
+        const b = p.bars[k];
+        // 同じ銘柄ならカーソルの価格、別の銘柄ならその足の終値に横線を合わせる
+        const pr = p.sym && src.sym && p.sym.key === src.sym.key && price != null ? price : b.c;
+        p.chart.setCrosshairPosition(pr, p.disp(b.t), p.candle);
+        p.hoverIdx = k; p.updateLegend(k);
+      }
+    } finally { this.busy = false; }
+  },
+};
 
 /* =====================================================================
  *  画面全体
