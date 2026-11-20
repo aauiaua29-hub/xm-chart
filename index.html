@@ -180,7 +180,7 @@
     </div>
     <div id="scanSummary"></div>
     <div id="scanTable"></div>
-    <p class="note sc-legend">▲上昇 ▼下降　なし＝ZONEなし　数字＝現在値からZONEまでの距離（pips。↓はZONEが下、↑は上）　接触中＝その時間足の現在のローソク足がZONEにかかっている　↑↑↑/↓↓↓＝直近の高値（安値）のあとZONEまで戻った　マスをタップするとチャートを開きます</p>
+    <p class="note sc-legend">▲上昇 ▼下降　なし＝ZONEなし　数字＝現在値からZONEまでの距離（pips。↓はZONEが下、↑は上）　接触中＝その時間足の現在のローソク足がZONEにかかっている（初・2・3…＝このZONEへの何回目の接触か）　↑↑↑/↓↓↓＝直近の高値（安値）のあとZONEまで戻った　マスをタップするとチャートを開きます</p>
   </section>
   <div id="rpSel" class="hidden">開始位置にしたいローソク足をタップ <button id="rpSelCancel">キャンセル</button></div>
   <div id="rpNote" class="hidden"></div>
@@ -404,7 +404,7 @@ function gkLaneDefaults(tf){
 }
 const GK_DEFAULTS = {
   lanes:[gkLaneDefaults('CUR'), gkLaneDefaults('H1'), gkLaneDefaults('H4')],
-  panel:true, watermark:true, toast:true,
+  panel:true, watermark:true, toast:true, swingLabels:true,
 };
 let GKS = null;   // 設定（端末ごとに保存）
 function gkSettings(){
@@ -425,6 +425,19 @@ function gkAlpha(hex, transparency){
   const n = parseInt(hex.slice(1), 16), a = (100 - transparency) / 100;
   return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
 }
+// 同じZONEへの接触回数：ZONEにかかる足が続く間を1回と数える。
+// ZONEができてから一度ZONEを離れる（かからない足が出る）までは数えない。
+function gkCountTouches(cands, top, bottom){
+  let left = false, inC = false, n = 0;
+  for (const b of cands){
+    const ov = b.l <= top && b.h >= bottom;
+    if (!left){ if (ov) continue; left = true; }
+    if (ov){ if (!inC){ n++; inC = true; } } else inC = false;
+  }
+  return n;
+}
+function gkTouchLabel(n){ return n <= 1 ? '初' : String(n); }
+
 function gkResetState(){
   return {
     pendingIdx:IVAL, pendingPrice:NVAL, pendingType:IVAL, trendDirection:0,
@@ -530,6 +543,7 @@ class GKEngine {
     this.chart = ctx.chart; this.chartSec = ctx.chartSec;
     const first = ctx.chart[0].t;
     this.older = src === ctx.chart ? [] : src.filter(b=>b.t < first).reverse();
+    this.src = src;
     return true;
   }
 
@@ -544,6 +558,19 @@ class GKEngine {
       if (PEq(price, isHigh ? b.h : b.l)) return i;
     }
     this.dataError = true; return IVAL;
+  }
+
+  // 今のZONEへの接触回数（その時間足のローソク足で数える。cur＝現在の足）
+  touchCount(cur){
+    const v = this.st, sec = this.cfg.minutes * 60;
+    if (!((v.trendDirection === 1 || v.trendDirection === -1) && v.Zonecount > 0) || !cur) return 0;
+    const ob = this.bar(v.zzIndex); if (!ob) return 0;
+    const oT = Math.floor(ob.t / sec) * sec, src = this.src || [];
+    let cands;
+    if (sec === this.chartSec) cands = src.filter(b=>b.t > oT && b.t < cur.t);
+    else cands = src.slice(0, -1).filter(b=>b.t > oT && b.t < cur.t);
+    cands.push(cur);
+    return gkCountTouches(cands, v.Zonetop, v.Zonebottom);
   }
 
   // 前回の確定時から足が進んだ分、位置をずらす（時刻基準を保つ）
@@ -563,6 +590,11 @@ class GKEngine {
     st.maxhigh=NVAL; st.maxhighindex=IVAL; st.minlow=NVAL; st.minlowindex=IVAL;
     this.ZigZagType=[]; this.ZigZagIndex=[]; this.ZoneIndex=[]; this.ZoneTop=[]; this.ZoneBottom=[]; this.ZoneColor=[];
     this.PivotRange();
+    // ZigZag配列に登録された高値・安値（SH/SLラベル用。判定には使わない）
+    this.pivots = this.ZigZagType.map((ty, k)=>{
+      const b = this.htf[this.ZigZagIndex[k]];
+      return b ? {t:b.t, type:ty, price: ty === 1 ? b.h : b.l} : null;
+    }).filter(Boolean);
     if (this.CountZigZagType() > 2){
       this.Trend();
       if (st.trendDirection === 1){
@@ -1264,12 +1296,13 @@ class GKPanel {
         if (v.Zonecount > 0){
           const mark = up ? '↑↑↑' : '↓↓↓', alerted = up ? v.alertedL : v.alertedS, cd = e.candle;
           const lines = [];
-          if (e.contact) lines.push(`<b class="contact">接触中</b>（現在の${tf}足がZONEにかかっている）`);
+          if (e.contact) lines.push(`<b class="contact">接触中（${gkTouchLabel(e.touches)}）</b>（現在の${tf}足がZONEにかかっている）`);
           lines.push(alerted ? `<b>${mark}</b> ZONE到達済み（直近${up ? '高値' : '安値'}のあとZONEまで戻った）`
                              : `未到達（直近${up ? '高値' : '安値'}のあと、まだZONEまで戻っていない）`);
           html += row('ZONE上限', f(v.Zonetop), dist(v.Zonetop));
           html += row('ZONE下限', f(v.Zonebottom), dist(v.Zonebottom));
           html += row('ZONE状態', lines.join('<br>'), `候補 ${v.Zonecount}件`);
+          html += row('接触回数', e.touches ? `${e.touches}回` + (e.contact ? '（いま接触中）' : '') : 'まだ接触していない', '');
           if (cd) html += row(`現在の${tf}足`, `高 ${f(cd.h)}<br>安 ${f(cd.l)}`, '');
           html += row(up ? '直近高値' : '直近安値', f(up ? v.alerttakane : v.alertyasune), dist(up ? v.alerttakane : v.alertyasune));
           const hi = up ? v.alerttakane : v.fibomodosi, lo = up ? v.fiboosi : v.alertyasune;
@@ -1286,7 +1319,7 @@ class GKPanel {
 
   // 接触中：その時間足の現在のローソク足が、ZONEに一部でもかかっている
   updateContact(e){
-    e.contact = false; e.candle = null;
+    e.contact = false; e.candle = null; e.touches = 0;
     if (!e.ready) return;
     const bars = this.p.bars, sec = e.cfg.minutes * 60, start = Math.floor(this.currentBar / sec) * sec;
     let h = -Infinity, l = Infinity;
@@ -1294,8 +1327,10 @@ class GKPanel {
     if (!isFinite(h)) return;
     e.candle = {h, l, t:start};
     const v = e.st;
-    if ((v.trendDirection === 1 || v.trendDirection === -1) && v.Zonecount > 0)
+    if ((v.trendDirection === 1 || v.trendDirection === -1) && v.Zonecount > 0){
       e.contact = PLe(l, v.Zonetop) && PGe(h, v.Zonebottom);
+      e.touches = e.touchCount(e.candle);
+    }
   }
   fire(msg){
     // 1本の足につき1回だけ（元コードの alert.freq_once_per_bar と同じ）
@@ -1361,7 +1396,19 @@ class GKPanel {
 
   /* ---- 描画内容を組み立てる（MT5版 RenderLane / RenderPanel / RenderWatermark） ---- */
   buildModel(){
-    const S = gkSettings(), m = {lines:[], boxes:[], texts:[], rows:[], wm:null};
+    const S = gkSettings(), m = {lines:[], boxes:[], texts:[], rows:[], wm:null, swings:[]};
+    // SH/SL：時間足を「現在足」にしている系統だけ
+    if (S.swingLabels){
+      const bars = this.p.bars;
+      const find = t=>{ let lo = 0, hi = bars.length - 1; while (lo <= hi){ const mid = (lo + hi) >> 1; if (bars[mid].t === t) return mid; if (bars[mid].t < t) lo = mid + 1; else hi = mid - 1; } return -1; };
+      this.engines.forEach((e, i)=>{
+        if (!e.ready || !e.cfg.enabled || S.lanes[i].tf !== 'CUR' || !e.pivots) return;
+        for (const pv of e.pivots){
+          const li = find(pv.t);
+          if (li >= 0 && !m.swings.some(x=>x.li === li && x.high === (pv.type === 1))) m.swings.push({li, price:pv.price, high:pv.type === 1});
+        }
+      });
+    }
     const last = this.p.bars.length - 1;
     this.engines.forEach((e, index)=>{
       const v = e.st, c = e.cfg;
@@ -1397,8 +1444,9 @@ class GKPanel {
         const trend = d === 1 ? '上昇' : d === -1 ? '下降' : 'NONE';
         let color = d === 1 ? GK_COLORS.panelUp : d === -1 ? GK_COLORS.panelDown : GK_COLORS.panelNone;
         const mark = d === 1 && v.alertedL ? '↑↑↑' : d === -1 && v.alertedS ? '↓↓↓' : '';
-        let zone = e.contact ? (mark ? mark + ' 接触中' : '接触中') : (mark || 'NONE');
-        let text = `${tfText}   ダウ: ${trend}   ZONE: ${zone}`, short = `${tfText} ${trend} ${(mark ? mark[0] : '') + (e.contact ? '接触' : '') || '-'}`;
+        const tl = gkTouchLabel(e.touches);
+        let zone = e.contact ? (mark ? `${mark} 接触中（${tl}）` : `接触中（${tl}）`) : (mark || 'NONE');
+        let text = `${tfText}   ダウ: ${trend}   ZONE: ${zone}`, short = `${tfText} ${trend} ${(mark ? mark[0] : '') + (e.contact ? '接触' + tl : '') || '-'}`;
         if (!e.ready){
           text = `${tfText}   ${e.status}`; color = GK_COLORS.panelNone;
           short = `${tfText} ${e.status === 'OFF' ? 'OFF' : e.status.startsWith('設定足') ? '対象外' : '待機中'}`;
@@ -1447,6 +1495,17 @@ class GKPanel {
       for (const t of m.texts){
         const x = X(t.li), y = Y(t.price); if (x == null || y == null) continue;
         ctx.fillStyle = t.color; ctx.fillText(t.text, x, y);
+      }
+      if (m.swings.length){
+        ctx.save(); ctx.font = `bold ${small ? 9 : 11}px sans-serif`; ctx.textAlign = 'center';
+        for (const s of m.swings){
+          const x = X(s.li), y = Y(s.price); if (x == null || y == null) continue;
+          ctx.fillStyle = s.high ? '#ff6b6b' : '#4dd0e1';
+          ctx.textBaseline = s.high ? 'bottom' : 'top';
+          ctx.fillText(s.high ? 'SH' : 'SL', x, s.high ? y - 3 : y + 3);
+        }
+        ctx.restore();
+        ctx.font = `${small ? 10 : 12}px sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
       }
       if (m.rows.length){
         const fs = small ? 10 : 12, lh = fs + 6;
@@ -1514,7 +1573,8 @@ function gkBuildSettings(box, onChange){
   });
   const fd = document.createElement('fieldset'); fd.innerHTML = '<legend>表示</legend>';
   const r6 = document.createElement('div'); r6.className = 'gkrow';
-  r6.append(chk(S,'panel','情報パネル'), chk(S,'watermark','背景文字'), chk(S,'toast','画面内アラート'));
+  r6.append(chk(S,'panel','情報パネル'), chk(S,'watermark','背景文字'), chk(S,'toast','画面内アラート'),
+            chk(S,'swingLabels','SH/SLラベル（時間足が「現在足」の系統のみ）'));
   const rs = document.createElement('div'); rs.className = 'gkrow';
   const rb = document.createElement('button'); rb.textContent = '初期設定に戻す';
   rb.onclick = ()=>{ GKS = JSON.parse(JSON.stringify(GK_DEFAULTS)); gkSave(); onChange(); buildIndList(); };
@@ -1722,7 +1782,8 @@ function gkScanCompute(bars, tf){
     reached = PLe(v.Zonebottom, hi);
   }
   const contact = hasZone && PLe(last.l, v.Zonetop) && PGe(last.h, v.Zonebottom);
-  return {ok:true, dir, hasZone, zt:v.Zonetop, zb:v.Zonebottom, contact, reached, price:last.c};
+  const touches = hasZone ? e.touchCount(last) : 0;
+  return {ok:true, dir, hasZone, zt:v.Zonetop, zb:v.Zonebottom, contact, reached, price:last.c, touches};
 }
 
 const Scanner = {
@@ -1815,7 +1876,7 @@ const Scanner = {
     const arrow = r.dir === 1 ? '<span class="up">▲</span>' : r.dir === -1 ? '<span class="dn">▼</span>' : '<span class="na">–</span>';
     const mark = r.reached ? `<span class="${r.dir === 1 ? 'up' : 'dn'} mk">${r.dir === 1 ? '↑↑↑' : '↓↓↓'}</span>` : '';
     const attrs = `data-sym="${esc(sym.key)}" data-tf="${tf}"`;
-    if (r.contact) return `<td ${attrs} class="sc-hit ${r.dir === 1 ? 'hit-up' : 'hit-dn'}">${arrow}<b>接触中</b>${mark}</td>`;
+    if (r.contact) return `<td ${attrs} class="sc-hit ${r.dir === 1 ? 'hit-up' : 'hit-dn'}">${arrow}<b>接触中（${gkTouchLabel(r.touches)}）</b>${mark}</td>`;
     let txt = 'なし';
     if (r.hasZone){
       const dist = r.price > r.zt ? r.price - r.zt : r.zb - r.price;
@@ -1831,7 +1892,7 @@ const Scanner = {
     if (this.onlyContact) syms = syms.filter(s=>hits(s) > 0);
     if (this.sortContact) syms.sort((a,b)=>hits(b) - hits(a) || a.order - b.order);
     const total = G.symbols.reduce((n,s)=>n + hits(s), 0);
-    $('scanSummary').innerHTML = `接触中 <b>${total}</b> 件` + (total ? '：' + G.symbols.flatMap(s=>this.tfs.filter(tf=>((this.results[s.key] || {})[tf] || {}).contact).map(tf=>`${esc(s.name)} ${tf}`)).join('、') : '');
+    $('scanSummary').innerHTML = `接触中 <b>${total}</b> 件` + (total ? '：' + G.symbols.flatMap(s=>this.tfs.filter(tf=>((this.results[s.key] || {})[tf] || {}).contact).map(tf=>`${esc(s.name)} ${tf}（${gkTouchLabel(this.results[s.key][tf].touches)}）`)).join('、') : '');
     let html = '<table><thead><tr><th>銘柄</th>' + this.tfs.map(t=>`<th>${t}</th>`).join('') + '</tr></thead><tbody>';
     for (const s of syms) html += `<tr><th>${esc(s.name)}</th>` + this.tfs.map(tf=>this.cell(s, tf)).join('') + '</tr>';
     if (!syms.length) html += `<tr><td colspan="${this.tfs.length + 1}" class="sc-empty">${this.onlyContact ? '接触中の銘柄はありません' : '銘柄がありません'}</td></tr>`;
