@@ -413,7 +413,7 @@ function gkLaneDefaults(tf){
 }
 const GK_DEFAULTS = {
   lanes:[gkLaneDefaults('CUR'), gkLaneDefaults('H1'), gkLaneDefaults('H4')],
-  panel:true, watermark:true, toast:true, swingLabels:true,
+  panel:true, watermark:true, toast:true, swingLabels:true, divLines:true, dowSigns:true,
 };
 let GKS = null;   // 設定（端末ごとに保存）
 function gkSettings(){
@@ -1286,6 +1286,7 @@ class GKPanel {
   reset(){
     this.seq++;
     this.engines = [0,1,2].map(i=>new GKEngine(i));
+    this.dowCache = new Map();   // 足の時刻 → その足の確定時点のダウ
     this.started = false; this.currentBar = null; this.lastAlertBar = null;
     this.quiet = true;   // 読み込み直後の1回目はアラートを画面に出さない
     this.htf = {}; this.fetching = {};
@@ -1366,6 +1367,35 @@ class GKPanel {
     this.update();
     if (gkDetailPanel === this.p) gkRenderDetail();
   }
+  // ダウ転換サイン（チャートの時間足）：各確定足の確定時点のダウを求め、上昇⇄下降に変わった足を返す
+  dowFlips(){
+    const bars = this.p.bars, n = bars.length, out = [];
+    if (n < GK_KEEP + 2) return out;
+    const t0 = performance.now(), dirs = new Array(n).fill(undefined);
+    let pending = false;
+    // 新しい足から計算（重いので1回あたり25msまで。残りは次の更新で続きを計算）
+    for (let i = n - 2; i >= GK_KEEP - 1; i--){
+      const t = bars[i].t, recent = i >= n - 4;   // 直近の確定足は最終値に揃うことがあるので毎回計算
+      let d = recent ? undefined : this.dowCache.get(t);
+      if (d === undefined){
+        if (performance.now() - t0 > 25){ pending = true; break; }
+        d = gkDowAt(bars.slice(i - GK_KEEP + 1, i + 1));
+        if (!recent) this.dowCache.set(t, d);
+      }
+      dirs[i] = d;
+    }
+    let prev = null;
+    for (let i = GK_KEEP - 1; i <= n - 2; i++){
+      const d = dirs[i];
+      if (d === undefined){ prev = null; continue; }
+      if (d !== 1 && d !== -1) continue;
+      if (prev !== null && d !== prev) out.push({li:i, up: d === 1, price: d === 1 ? bars[i].l : bars[i].h});
+      prev = d;
+    }
+    if (pending) setTimeout(()=>this.p.schedule(false), 0);
+    return out;
+  }
+
   hit(pt){ const r = this.panelRect; return !!(r && pt.x >= r.x1 && pt.x <= r.x2 && pt.y >= r.y1 && pt.y <= r.y2); }
 
   /* ---- 詳細（右下の表をタップしたとき） ---- */
@@ -1519,7 +1549,24 @@ class GKPanel {
 
   /* ---- 描画内容を組み立てる（MT5版 RenderLane / RenderPanel / RenderWatermark） ---- */
   buildModel(){
-    const S = gkSettings(), m = {lines:[], boxes:[], texts:[], rows:[], wm:null, swings:[]};
+    const S = gkSettings(), m = {lines:[], boxes:[], texts:[], rows:[], wm:null, swings:[], divLines:[], rsiLines:[], flips:[]};
+    if (S.dowSigns) m.flips = this.dowFlips();
+    // ダイバージェンスライン：時間足を「現在足」にしている系統だけ
+    if (S.divLines){
+      const bars = this.p.bars, seen = new Set();
+      const find = t=>{ let lo = 0, hi = bars.length - 1; while (lo <= hi){ const mid = (lo + hi) >> 1; if (bars[mid].t === t) return mid; if (bars[mid].t < t) lo = mid + 1; else hi = mid - 1; } return -1; };
+      const rsiOn = indState.rsi && indState.rsi.on && +indState.rsi.p.n === GK_RSI;
+      this.engines.forEach((e, i)=>{
+        if (!e.ready || !e.cfg.enabled || S.lanes[i].tf !== 'CUR') return;
+        for (const d of (e.div || []).concat(e.divP || [])){
+          const key = gkDivLabel(d) + d.t1 + ':' + d.t2; if (seen.has(key)) continue; seen.add(key);
+          const li1 = find(d.t1), li2 = find(d.t2); if (li1 < 0 || li2 < 0) continue;
+          const color = d.bull ? '#4dd0e1' : '#ff6b6b';
+          m.divLines.push({li1, li2, p1:d.p1, p2:d.p2, color, dash:!!d.prov, bull:d.bull, label:gkDivLabel(d)});
+          if (rsiOn) m.rsiLines.push({li1, li2, r1:d.r1, r2:d.r2, color, dash:!!d.prov});
+        }
+      });
+    }
     // SH/SL：時間足を「現在足」にしている系統だけ
     if (S.swingLabels){
       const bars = this.p.bars;
@@ -1590,7 +1637,27 @@ class GKPanel {
     return m;
   }
 
-  update(){ if (this.requestUpdate) this.requestUpdate(); }
+  update(){
+    if (this.requestUpdate) this.requestUpdate();
+    const rp = this.p.rsiPrimRef; if (rp && rp.req) rp.req();
+  }
+  // RSIの段に、ダイバージェンスのRSI同士を結ぶ線を描く
+  drawRsiDiv(target, prim){
+    const m = this.model; if (!m || !m.rsiLines || !m.rsiLines.length || !prim.chart) return;
+    target.useMediaCoordinateSpace(({context:ctx})=>{
+      const ts = prim.chart.timeScale();
+      for (const l of m.rsiLines){
+        const x1 = ts.logicalToCoordinate(l.li1), x2 = ts.logicalToCoordinate(l.li2);
+        const y1 = prim.series.priceToCoordinate(l.r1), y2 = prim.series.priceToCoordinate(l.r2);
+        if (x1 == null || x2 == null || y1 == null || y2 == null) continue;
+        ctx.strokeStyle = l.color; ctx.lineWidth = 1.5; ctx.setLineDash(l.dash ? [5, 4] : []);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        ctx.fillStyle = l.color;
+        for (const [x, y] of [[x1, y1], [x2, y2]]){ ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill(); }
+      }
+      ctx.setLineDash([]);
+    });
+  }
 
   draw(target, background){
     const m = this.model; if (!m || !this.lc){ this.panelRect = null; return; }
@@ -1623,6 +1690,38 @@ class GKPanel {
         const x = X(t.li), y = Y(t.price); if (x == null || y == null) continue;
         ctx.fillStyle = t.color; ctx.fillText(t.text, x, y);
       }
+      if (m.flips.length){
+        ctx.save();
+        const sz = small ? 5 : 6;
+        for (const f of m.flips){
+          const x = X(f.li), y = Y(f.price); if (x == null || y == null) continue;
+          // SH/SLラベルと重ならないよう、足の高値（安値）から離して描く
+          const yy = f.up ? y + (small ? 18 : 22) : y - (small ? 18 : 22);
+          ctx.fillStyle = f.up ? '#26c6da' : '#ef5350';
+          ctx.beginPath();
+          if (f.up){ ctx.moveTo(x, yy - sz); ctx.lineTo(x - sz, yy + sz); ctx.lineTo(x + sz, yy + sz); }
+          else { ctx.moveTo(x, yy + sz); ctx.lineTo(x - sz, yy - sz); ctx.lineTo(x + sz, yy - sz); }
+          ctx.closePath(); ctx.fill();
+        }
+        ctx.restore();
+      }
+      if (m.divLines.length){
+        ctx.save();
+        for (const l of m.divLines){
+          const x1 = X(l.li1), x2 = X(l.li2), y1 = Y(l.p1), y2 = Y(l.p2);
+          if (x1 == null || x2 == null || y1 == null || y2 == null) continue;
+          // 線は転換点のラベル（SH/SL）と重ならないよう、少し外側（SHは上・SLは下）に寄せる
+          const off = l.bull ? 2 : -2;
+          ctx.strokeStyle = l.color; ctx.lineWidth = 1.5; ctx.setLineDash(l.dash ? [5, 4] : []);
+          ctx.beginPath(); ctx.moveTo(x1, y1 + off); ctx.lineTo(x2, y2 + off); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.font = `bold ${small ? 9 : 11}px sans-serif`; ctx.fillStyle = l.color; ctx.textAlign = 'center';
+          ctx.textBaseline = l.bull ? 'top' : 'bottom';
+          ctx.fillText(l.label, (x1 + x2) / 2, (y1 + y2) / 2 + (l.bull ? 6 : -6));
+        }
+        ctx.restore();
+        ctx.font = `${small ? 10 : 12}px sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      }
       if (m.swings.length){
         ctx.save(); ctx.font = `bold ${small ? 9 : 11}px sans-serif`; ctx.textAlign = 'center';
         for (const s of m.swings){
@@ -1653,6 +1752,17 @@ class GKPanel {
       if (!m.rows.length) this.panelRect = null;
     });
   }
+}
+
+/* ---------- ある足の確定時点のダウ（Rebuild と同じ PivotRange → Trend） ----------
+ * closed：その足までの確定足82本（古い順） */
+function gkDowAt(closed){
+  const e = new GKEngine(0);
+  e.htf = closed.slice().reverse();
+  e.hArr = e.htf.map(b=>b.h); e.lArr = e.htf.map(b=>b.l); e.cArr = e.htf.map(b=>b.c); e.oArr = e.htf.map(b=>b.o);
+  e.iter = 0; e.PivotRange();
+  if (e.CountZigZagType() > 2) e.Trend();
+  return e.dataError ? null : e.st.trendDirection;
 }
 
 /* ---------- 1つの時間足を、その時間足のローソク足だけで計算（詳細・一覧で共通） ---------- */
@@ -1773,7 +1883,9 @@ function gkBuildSettings(box, onChange){
   const fd = document.createElement('fieldset'); fd.innerHTML = '<legend>表示</legend>';
   const r6 = document.createElement('div'); r6.className = 'gkrow';
   r6.append(chk(S,'panel','情報パネル'), chk(S,'watermark','背景文字'), chk(S,'toast','画面内アラート'),
-            chk(S,'swingLabels','SH/SLラベル（時間足が「現在足」の系統のみ）'));
+            chk(S,'swingLabels','SH/SLラベル（時間足が「現在足」の系統のみ）'),
+            chk(S,'divLines','ダイバージェンスライン（「現在足」の系統のみ。RSI14を表示中はRSIの段にも）'),
+            chk(S,'dowSigns','ダウ転換サイン（チャートの時間足のみ。▲上昇転換 ▼下降転換）'));
   const rs = document.createElement('div'); rs.className = 'gkrow';
   const rb = document.createElement('button'); rb.textContent = '初期設定に戻す';
   rb.onclick = ()=>{ GKS = JSON.parse(JSON.stringify(GK_DEFAULTS)); gkSave(); onChange(); buildIndList(); };
@@ -2537,6 +2649,7 @@ class Panel {
           if (firstInPane)
             for (const lv of ind.levels || []) s.createPriceLine({price:lv, color:'#4a5160', lineWidth:1, lineStyle:2, axisLabelVisible:false});
           this.indSeries[k] = s; created = true;
+          if (k === 'rsi:r') s.attachPrimitive(this.rsiPrim());
         }
         const vals = ln.values;
         if (full || created || ind.repaint){
@@ -2566,6 +2679,17 @@ class Panel {
       this.paneCount = panes.length;
       panes.forEach((p,i)=>p.setStretchFactor(i === 0 ? 3 : 1));
     }
+  }
+
+  // RSIの段に付ける描画（ダイバージェンスのRSI同士の線）
+  rsiPrim(){
+    const self = this, prim = {
+      attached(p){ prim.chart = p.chart; prim.series = p.series; prim.req = p.requestUpdate; self.rsiPrimRef = prim; },
+      detached(){ if (self.rsiPrimRef === prim) self.rsiPrimRef = null; },
+      updateAllViews(){},
+      paneViews(){ return [{ zOrder(){ return 'top'; }, renderer(){ return { draw:t=>self.gk.drawRsiDiv(t, prim) }; } }]; },
+    };
+    return prim;
   }
 
   setQuote(q){
