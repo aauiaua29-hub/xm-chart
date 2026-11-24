@@ -227,6 +227,17 @@
     <p class="note">FirebaseのデータベースURLを入力してください（例：https://xxxx-default-rtdb.asia-southeast1.firebasedatabase.app）。<br>
       この端末のブラウザに保存されます。「demo」と入力するとデモデータで表示します。</p>
     <input id="cfgUrl" type="url" placeholder="https://…firebasedatabase.app" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <h2 style="margin-top:18px">保有ポジションの表示</h2>
+    <p class="note" id="posState"></p>
+    <div class="row" style="justify-content:flex-start;margin-top:4px">
+      <button id="posLogin" class="hidden">Googleでログイン</button>
+      <button id="posLogout" class="hidden">ログアウト</button>
+    </div>
+    <div id="posUidBox" class="hidden note" style="margin-top:8px">
+      ユーザーID：<code id="posUid" style="user-select:all;color:var(--text)"></code>
+      <button id="posCopy" style="margin-left:6px;padding:3px 8px">コピー</button><br>
+      このIDを、VPSのEAの「ポジション表示用のユーザーID」に入力してください（最初の1回だけ）。
+    </div>
     <div class="row">
       <button id="cfgDemo">デモで表示</button>
       <button id="cfgCancel">閉じる</button>
@@ -236,6 +247,9 @@
 </div>
 
 <script src="https://unpkg.com/lightweight-charts@5.3.0/dist/lightweight-charts.standalone.production.js"></script>
+<!-- Googleログイン（保有ポジションの表示に使用） -->
+<script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
 <script>
 'use strict';
 
@@ -414,6 +428,7 @@ function gkLaneDefaults(tf){
 const GK_DEFAULTS = {
   lanes:[gkLaneDefaults('CUR'), gkLaneDefaults('H1'), gkLaneDefaults('H4')],
   panel:true, watermark:true, toast:true, swingLabels:true, divLines:true, dowSigns:true,
+  pivotMode:'zigzag', stPeriod:20, stMult:1,   // SH/SLの判定方式（全時間足・全銘柄共通）
 };
 let GKS = null;   // 設定（端末ごとに保存）
 function gkSettings(){
@@ -525,6 +540,50 @@ function gkDivProvisional(pivots, pending, closed, rs, forming){
     }
   }
   return res;
+}
+
+// SuperTrend（Pine の ta.supertrend と同じ）。戻り値：各足の向き 1＝上昇 / -1＝下降 / null＝計算前
+function gkSuperTrendDirs(bars, period, mult){
+  const n = bars.length, dirs = new Array(n).fill(null);
+  let atr = null, trSum = 0, prevUp = null, prevLo = null, prevDir = null, prevSt = null, prevAtr = null;
+  for (let i = 0; i < n; i++){
+    const b = bars[i], pc = i > 0 ? bars[i-1].c : null;
+    const tr = pc === null ? b.h - b.l : Math.max(b.h - b.l, Math.abs(b.h - pc), Math.abs(b.l - pc));
+    if (atr === null){ trSum += tr; if (i === period - 1) atr = trSum / period; }
+    else atr = (atr * (period - 1) + tr) / period;
+    if (atr === null) continue;
+    const src = (b.h + b.l) / 2;
+    let up = src + mult * atr, lo = src - mult * atr;
+    const pUp = prevUp === null ? 0 : prevUp, pLo = prevLo === null ? 0 : prevLo;
+    lo = (lo > pLo || (pc !== null && pc < pLo)) ? lo : pLo;
+    up = (up < pUp || (pc !== null && pc > pUp)) ? up : pUp;
+    let dir;   // Pine：-1＝上昇、1＝下降
+    if (prevAtr === null) dir = 1;
+    else if (prevSt === pUp) dir = b.c > up ? -1 : 1;
+    else dir = b.c < lo ? 1 : -1;
+    const st = dir === -1 ? lo : up;
+    dirs[i] = dir === -1 ? 1 : -1;
+    prevUp = up; prevLo = lo; prevSt = st; prevAtr = atr; prevDir = dir;
+  }
+  return dirs;
+}
+// SuperTrend方式の転換点：上昇の区間（SuperTrendが上昇の足）の最高値＝SH、下降の区間の最安値＝SL。
+// 区間が終わった（反対に転換した足が確定した）時点で登録。進行中の区間の高値/安値は保留。最初の区間は使わない。
+// end：最新の確定足の位置。戻り値の hidx は end から何本前か（0＝end）。
+function gkSegPivots(bars, dirs, end){
+  const piv = []; let segStart = -1, segDir = null, first = true;
+  const ext = (a, b, up)=>{ let k = a; for (let j = a + 1; j <= b; j++) if (up ? bars[j].h > bars[k].h : bars[j].l < bars[k].l) k = j; return k; };
+  for (let k = 0; k <= end; k++){
+    const d = dirs[k]; if (d === null) continue;
+    if (segDir === null){ segDir = d; segStart = k; continue; }
+    if (d !== segDir){
+      if (!first){ const x = ext(segStart, k - 1, segDir === 1); piv.push({type:segDir, k:x, hidx:end - x, price: segDir === 1 ? bars[x].h : bars[x].l}); }
+      first = false; segDir = d; segStart = k;
+    }
+  }
+  let pending = null;
+  if (segDir !== null && !first){ const x = ext(segStart, end, segDir === 1); pending = {type:segDir, k:x, hidx:end - x, price: segDir === 1 ? bars[x].h : bars[x].l}; }
+  return {piv, pending};
 }
 
 function gkResetState(){
@@ -649,6 +708,18 @@ class GKEngine {
     this.dataError = true; return IVAL;
   }
 
+  // SuperTrend方式でZigZag配列（と保留）を作る。SuperTrendは読み込んだ全確定足で計算してなじませる
+  STPivots(closedAll, dirs, end){
+    const S = gkSettings(), st = this.st;
+    st.ifrange = false;
+    if (!closedAll){ closedAll = (this.src || []).slice(0, -1); end = closedAll.length - 1; }
+    if (closedAll.length < GK_KEEP){ this.dataError = true; return; }
+    if (!dirs) dirs = gkSuperTrendDirs(closedAll, Math.max(1, +S.stPeriod || 20), +S.stMult || 1);
+    const r = gkSegPivots(closedAll, dirs, end);
+    for (const p of r.piv) if (p.hidx <= this.lookback){ this.PushZigZagType(p.type); this.PushZigZagIndex(p.hidx); }
+    if (r.pending && r.pending.hidx <= this.lookback){ st.pendingType = r.pending.type; st.pendingIdx = r.pending.hidx; st.pendingPrice = r.pending.price; }
+  }
+
   // 暫定ダイバージェンス（forming＝その時間足の形成中の足）
   provisional(forming){
     const r = gkDivProvisional(this.pivots, this.pending, this.closedSrc, this.rsiState, forming);
@@ -685,7 +756,7 @@ class GKEngine {
     st.takane=NVAL; st.takaneindex=IVAL; st.yasune=NVAL; st.yasuneindex=IVAL;
     st.maxhigh=NVAL; st.maxhighindex=IVAL; st.minlow=NVAL; st.minlowindex=IVAL;
     this.ZigZagType=[]; this.ZigZagIndex=[]; this.ZoneIndex=[]; this.ZoneTop=[]; this.ZoneBottom=[]; this.ZoneColor=[];
-    this.PivotRange();
+    if (gkSettings().pivotMode === 'st') this.STPivots(); else this.PivotRange();
     // ZigZag配列に登録された高値・安値（SH/SLラベル用。判定には使わない）
     this.pivots = this.ZigZagType.map((ty, k)=>{
       const b = this.htf[this.ZigZagIndex[k]];
@@ -1371,7 +1442,9 @@ class GKPanel {
   dowFlips(){
     const bars = this.p.bars, n = bars.length, out = [];
     if (n < GK_KEEP + 2) return out;
-    const t0 = performance.now(), dirs = new Array(n).fill(undefined);
+    const t0 = performance.now(), dirs = new Array(n).fill(undefined), S = gkSettings();
+    // SuperTrend方式：確定足全体でSuperTrendを1回だけ計算（各足の向きはその足までのデータだけで決まる）
+    const stDirs = S.pivotMode === 'st' ? gkSuperTrendDirs(bars.slice(0, n - 1), Math.max(1, +S.stPeriod || 20), +S.stMult || 1) : null;
     let pending = false;
     // 新しい足から計算（重いので1回あたり25msまで。残りは次の更新で続きを計算）
     for (let i = n - 2; i >= GK_KEEP - 1; i--){
@@ -1379,7 +1452,7 @@ class GKPanel {
       let d = recent ? undefined : this.dowCache.get(t);
       if (d === undefined){
         if (performance.now() - t0 > 25){ pending = true; break; }
-        d = gkDowAt(bars.slice(i - GK_KEEP + 1, i + 1));
+        d = gkDowAt(bars.slice(i - GK_KEEP + 1, i + 1), bars, stDirs, i);
         if (!recent) this.dowCache.set(t, d);
       }
       dirs[i] = d;
@@ -1756,11 +1829,12 @@ class GKPanel {
 
 /* ---------- ある足の確定時点のダウ（Rebuild と同じ PivotRange → Trend） ----------
  * closed：その足までの確定足82本（古い順） */
-function gkDowAt(closed){
+function gkDowAt(closed, all, dirs, end){
   const e = new GKEngine(0);
   e.htf = closed.slice().reverse();
   e.hArr = e.htf.map(b=>b.h); e.lArr = e.htf.map(b=>b.l); e.cArr = e.htf.map(b=>b.c); e.oArr = e.htf.map(b=>b.o);
-  e.iter = 0; e.PivotRange();
+  e.iter = 0;
+  if (dirs) e.STPivots(all, dirs, end); else e.PivotRange();
   if (e.CountZigZagType() > 2) e.Trend();
   return e.dataError ? null : e.st.trendDirection;
 }
@@ -1880,6 +1954,27 @@ function gkBuildSettings(box, onChange){
     hz.append(chk(ln,'horizontal','水平（ZONEを直近の本数内に限定）'), hb);
     fs.append(head, row, hz); wrap.appendChild(fs);
   });
+  const fp = document.createElement('fieldset'); fp.innerHTML = '<legend>SH/SLの判定方式（全時間足・全銘柄共通。ダウ・ZONEにも反映）</legend>';
+  const rp = document.createElement('div'); rp.className = 'gkrow';
+  const ml = document.createElement('label'); ml.className = 'chip'; ml.textContent = '方式 ';
+  const ms = document.createElement('select');
+  ms.innerHTML = '<option value="zigzag">ZigZag（元のGK_ZONE）</option><option value="st">SuperTrend</option>';
+  ms.value = S.pivotMode; ms.onchange = ()=>{ S.pivotMode = ms.value; gkSave(); onChange(); buildIndList(); };
+  ml.appendChild(ms); rp.appendChild(ml);
+  if (S.pivotMode === 'st'){
+    const num = (key, label, step)=>{
+      const l = document.createElement('label'); l.className = 'chip'; l.textContent = label + ' ';
+      const i = document.createElement('input'); i.type = 'number'; i.step = step; i.min = step; i.value = S[key]; i.inputMode = 'decimal';
+      i.onchange = ()=>{ const v = parseFloat(i.value); if (!(v > 0)){ i.value = S[key]; return; } S[key] = key === 'stPeriod' ? Math.round(v) : v; gkSave(); onChange(); };
+      l.appendChild(i); return l;
+    };
+    rp.append(num('stPeriod', '期間', 1), num('stMult', '乗数', 0.1));
+  }
+  const pn = document.createElement('p'); pn.className = 'note'; pn.style.margin = '6px 0 0';
+  pn.textContent = S.pivotMode === 'st'
+    ? 'SuperTrendが上昇の区間の最高値＝SH、下降の区間の最安値＝SL。反対に転換した足が確定した時点で登録します。'
+    : '前後3本で一番高い（安い）足を候補とし、反対側の候補が出た時点で登録します（元コードどおり）。';
+  fp.append(rp, pn); wrap.appendChild(fp);
   const fd = document.createElement('fieldset'); fd.innerHTML = '<legend>表示</legend>';
   const r6 = document.createElement('div'); r6.className = 'gkrow';
   r6.append(chk(S,'panel','情報パネル'), chk(S,'watermark','背景文字'), chk(S,'toast','画面内アラート'),
@@ -2224,6 +2319,112 @@ function wireScan(){
 }
 
 /* =====================================================================
+ *  保有ポジションの表示（建値・SL・TP のラインのみ。損益は扱わない）
+ *  ---------------------------------------------------------------------
+ *  ・Googleでログインした本人だけが読める場所（/pos/ユーザーID）をEAが更新する
+ *  ・ここはその場所を読み取り、表示中の銘柄のポジションにラインを引くだけ（発注・決済はしない）
+ * ===================================================================== */
+// ↓ Firebaseの「ウェブアプリ」の設定を貼り付けます（公開して問題ない値です）
+const FIREBASE_CONFIG = null;
+// 例：{ apiKey:'AIza…', authDomain:'xm-chart.firebaseapp.com', databaseURL:'https://xm-chart-default-rtdb.asia-southeast1.firebasedatabase.app', projectId:'xm-chart', appId:'1:…' }
+
+const Pos = {
+  ready:false, user:null, es:null, data:{}, timer:null, msg:'', seq:0,
+  init(){
+    if (!FIREBASE_CONFIG){ this.msg = '未設定（index.html の FIREBASE_CONFIG にFirebaseの設定を入れると使えます）'; paintPos(); return; }
+    if (typeof firebase === 'undefined'){ this.msg = 'ログイン機能を読み込めませんでした'; paintPos(); return; }
+    try{
+      if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+      this.ready = true;
+      firebase.auth().getRedirectResult().catch(e=>{ this.msg = 'ログインに失敗しました：' + e.message; paintPos(); });
+      firebase.auth().onAuthStateChanged(u=>{ this.user = u; this.msg = ''; paintPos(); this.connect(); });
+    }catch(e){ this.msg = '初期化に失敗しました：' + e.message; }
+    paintPos();
+  },
+  async login(){
+    if (!this.ready) return;
+    const pr = new firebase.auth.GoogleAuthProvider();
+    try{ await firebase.auth().signInWithPopup(pr); }
+    catch(e){
+      // ポップアップが使えない環境では、画面を切り替える方式でログイン
+      if (/popup-blocked|operation-not-supported|popup-closed-by-user/.test(e.code || '')){
+        if (e.code !== 'auth/popup-closed-by-user') await firebase.auth().signInWithRedirect(pr);
+      } else { this.msg = 'ログインに失敗しました：' + (e.message || e.code); paintPos(); }
+    }
+  },
+  logout(){ if (this.ready) firebase.auth().signOut(); },
+
+  /* ---- 受信 ---- */
+  close(){ if (this.es){ this.es.close(); this.es = null; } clearTimeout(this.timer); },
+  async connect(){
+    this.close(); const seq = ++this.seq;
+    if (G.demo){ this.data = this.demoData(); this.apply(); return; }
+    if (!this.user || !G.db){ this.data = {}; this.apply(); return; }
+    let token;
+    try{ token = await this.user.getIdToken(); }catch(e){ return; }
+    if (seq !== this.seq) return;
+    const es = new EventSource(Firebase.url(`/pos/${this.user.uid}`, 'auth=' + encodeURIComponent(token)));
+    this.es = es;
+    const handle = (ev, patch)=>{
+      let m; try{ m = JSON.parse(ev.data); }catch(e){ return; }
+      if (!m) return;
+      const segs = (m.path || '/').split('/').filter(Boolean);
+      if (!segs.length){
+        if (patch && m.data) Object.assign(this.data, m.data); else this.data = m.data || {};
+      } else {
+        let o = this.data;
+        for (let i = 0; i < segs.length - 1; i++){ if (!o[segs[i]] || typeof o[segs[i]] !== 'object') o[segs[i]] = {}; o = o[segs[i]]; }
+        const k = segs[segs.length-1];
+        if (patch && m.data && typeof m.data === 'object') o[k] = Object.assign(o[k] || {}, m.data);
+        else if (m.data === null) delete o[k]; else o[k] = m.data;
+      }
+      this.msg = ''; this.apply();
+    };
+    es.addEventListener('put', e=>handle(e, false));
+    es.addEventListener('patch', e=>handle(e, true));
+    // ログインの有効期限（約1時間）が切れたら、新しい証明でつなぎ直す
+    es.addEventListener('auth_revoked', ()=>this.connect());
+    es.addEventListener('cancel', ()=>{ this.msg = '読み取りが許可されていません（Firebaseのルールを確認）'; paintPos(); });
+    this.timer = setTimeout(()=>this.connect(), 50 * 60 * 1000);
+  },
+  apply(){ paintPos(); if (typeof panels !== 'undefined') panels.forEach(p=>p.applyPositions()); },
+  forSymbol(key){ return Object.values(this.data || {}).filter(p=>p && p.k === key && +p.o > 0); },
+  count(){ return Object.values(this.data || {}).filter(Boolean).length; },
+  // デモ表示用（見た目の確認のため）
+  demoData(){
+    const out = {}, add = (id, k, d, v, o, sl, tp)=>{ out[id] = {k, s:k, d, v, o, sl, tp, t:0}; };
+    const px = k=>{ try{ const B = Demo.base[k]; return B ? B.c[B.c.length-1] : null; }catch(e){ return null; } };
+    const u = px('USDJPY') || 154.2, g = px('GOLD') || 2650;
+    add('1001', 'USDJPY', 1, 0.10, +(u - 0.08).toFixed(3), +(u - 0.30).toFixed(3), +(u + 0.40).toFixed(3));
+    add('1002', 'USDJPY', -1, 0.05, +(u + 0.12).toFixed(3), +(u + 0.35).toFixed(3), 0);
+    add('1003', 'GOLD', 1, 0.01, +(g - 3).toFixed(2), 0, +(g + 12).toFixed(2));
+    return out;
+  },
+};
+
+function paintPos(){
+  const P = Pos, st = $('posState'); if (!st) return;
+  const login = $('posLogin'), logout = $('posLogout'), box = $('posUidBox');
+  login.classList.toggle('hidden', !P.ready || !!P.user);
+  logout.classList.toggle('hidden', !P.user);
+  box.classList.toggle('hidden', !P.user);
+  if (P.user) $('posUid').textContent = P.user.uid;
+  st.textContent = P.msg || (G.demo ? 'デモ表示中は見本のポジションを表示します' :
+    P.user ? `${P.user.email || 'ログイン中'}　／　保有 ${P.count()} 件` : 'ログインすると、保有ポジションの建値・SL・TPをチャートに表示します');
+  paintStatus();
+}
+function wirePos(){
+  $('posLogin').onclick = ()=>Pos.login();
+  $('posLogout').onclick = ()=>Pos.logout();
+  $('posCopy').onclick = async ()=>{
+    try{ await navigator.clipboard.writeText(Pos.user.uid); $('posCopy').textContent = 'コピーしました'; }
+    catch(e){ $('posCopy').textContent = 'コピーできませんでした'; }
+    setTimeout(()=>$('posCopy').textContent = 'コピー', 2000);
+  };
+  Pos.init();
+}
+
+/* =====================================================================
  *  以下はアプリ本体（通常は編集不要）
  * ===================================================================== */
 const MAX_PANELS  = 4;
@@ -2524,6 +2725,7 @@ class Panel {
     this.gk.reset();
     this.fresh = true; this.render(true); this.fresh = false;
     if (bars.length) this.chart.timeScale().setVisibleLogicalRange({from: Math.max(0, bars.length - 120), to: bars.length + 14});
+    this.applyPositions();
     this.unsub = G.src.subscribe(key, tf, (b,q)=>{ if (seq === this.loadSeq) this.onLive(b,q); }, ()=>this.reloadRecent(50));
   }
 
@@ -2552,6 +2754,7 @@ class Panel {
     this.fresh = true; this.render(true); this.fresh = false;
     const n = this.bars.length;
     if (n) this.chart.timeScale().setVisibleLogicalRange({from: Math.max(0, n - 120), to: n + 14});
+    this.applyPositions();
   }
   applyReplay(){
     if (!this.replayFull) return;
@@ -2678,6 +2881,20 @@ class Panel {
     if (panes.length !== this.paneCount){
       this.paneCount = panes.length;
       panes.forEach((p,i)=>p.setStretchFactor(i === 0 ? 3 : 1));
+    }
+  }
+
+  // 保有ポジションのライン（建値・SL・TP）
+  applyPositions(){
+    for (const l of this.posLines || []) this.candle.removePriceLine(l);
+    this.posLines = [];
+    if (Replay.active || !this.sym) return;
+    for (const p of Pos.forSymbol(this.sym.key)){
+      const buy = +p.d === 1;
+      this.posLines.push(this.candle.createPriceLine({price:+p.o, color: buy ? '#2962ff' : '#ef5350', lineWidth:2, lineStyle:0,
+        axisLabelVisible:true, title:`${buy ? 'BUY' : 'SELL'} ${(+p.v).toFixed(2)}`}));
+      if (+p.sl > 0) this.posLines.push(this.candle.createPriceLine({price:+p.sl, color:'#ff9800', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'SL'}));
+      if (+p.tp > 0) this.posLines.push(this.candle.createPriceLine({price:+p.tp, color:'#26a69a', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'TP'}));
     }
   }
 
@@ -2821,6 +3038,7 @@ function paintStatus(){
     if (age < 60) text = 'EA稼働中';
     else { color = '#f5b041'; text = `EAの更新が ${age < 3600 ? Math.floor(age/60)+'分' : Math.floor(age/3600)+'時間'}止まっています`; }
   }
+  if (typeof Pos !== 'undefined' && Pos.user && !G.demo && !Replay.active) text += '・ポジション連携中';
   $('dot').style.background = color; $('statusText').textContent = text;
 }
 async function refreshStatus(){
@@ -2853,7 +3071,11 @@ function paintTz(){ $('tz').innerHTML = G.tz === 'jst' ? '日本<span class="txt
 $('tz').onclick = ()=>{ G.tz = G.tz === 'jst' ? 'server' : 'jst'; store.set('tz', G.tz); paintTz(); panels.forEach(p=>p.schedule(true)); };
 
 function saveInd(){ store.set('ind', indState); }
-function refreshIndicators(){ panels.forEach(p=>{ p.clearIndicators(); p.gk.reset(); p.schedule(true); }); paintGkBtn(); }
+function refreshIndicators(){
+  panels.forEach(p=>{ p.clearIndicators(); p.gk.reset(); p.schedule(true); }); paintGkBtn();
+  if (gkDetailPanel) gkRenderDetail();
+  if (Scanner.on){ Scanner.seq++; Scanner.loading = false; Scanner.refresh(false); }
+}
 function paintGkBtn(){ $('gkBtn').className = indState.gk && indState.gk.on ? 'on' : ''; }
 $('gkBtn').onclick = ()=>{ indState.gk.on = !indState.gk.on; saveInd(); refreshIndicators(); };
 function buildIndList(){
@@ -2918,6 +3140,7 @@ async function start(db){
   try{ G.db = db; syms = await src.symbols(); }
   catch(e){ setConn(false); showGlobalMsg('データベースに接続できませんでした<br><span class="note">' + esc(e.message) + '<br>⚙ からURLを確認してください</span>'); return; }
   G.src = src; G.symbols = syms; Scanner.data = {}; Scanner.results = {};
+  Pos.connect();
   showGlobalMsg(syms.length ? '' : 'まだデータがありません<br><span class="note">VPSでEAが動いているか確認してください</span>');
   if (G.link){ const k = G.paneCfg[0].sym; for (const c of G.paneCfg) c.sym = k; }
   await refreshStatus();
@@ -2932,7 +3155,7 @@ document.addEventListener('visibilitychange', ()=>{
   if (document.visibilityState === 'visible' && G.src && !G.demo && !Replay.active){ refreshStatus(); panels.forEach(p=>p.load()); }
 });
 
-wireReplay(); wireScan();
+wireReplay(); wireScan(); wirePos();
 paintTz(); paintLayout(); paintGkBtn();
 start(store.get('db', '') || DEFAULT_DB_URL || 'demo');
 </script>
