@@ -428,7 +428,7 @@ function gkLaneDefaults(tf){
 const GK_DEFAULTS = {
   lanes:[gkLaneDefaults('CUR'), gkLaneDefaults('H1'), gkLaneDefaults('H4')],
   panel:true, watermark:true, toast:true, swingLabels:true, divLines:true, dowSigns:true,
-  pivotMode:'zigzag', stPeriod:20, stMult:1,   // SH/SLの判定方式（全時間足・全銘柄共通）
+  pivotMode:'zigzag', stPeriod:20, stMult:1, stLine:true,   // SH/SLの判定方式（全時間足・全銘柄共通）
 };
 let GKS = null;   // 設定（端末ごとに保存）
 function gkSettings(){
@@ -543,8 +543,10 @@ function gkDivProvisional(pivots, pending, closed, rs, forming){
 }
 
 // SuperTrend（Pine の ta.supertrend と同じ）。戻り値：各足の向き 1＝上昇 / -1＝下降 / null＝計算前
-function gkSuperTrendDirs(bars, period, mult){
-  const n = bars.length, dirs = new Array(n).fill(null);
+function gkSuperTrendDirs(bars, period, mult){ return gkSuperTrend(bars, period, mult).dirs; }
+// SuperTrend の向き（dirs）とラインの値（line）
+function gkSuperTrend(bars, period, mult){
+  const n = bars.length, dirs = new Array(n).fill(null), line = new Array(n).fill(null);
   let atr = null, trSum = 0, prevUp = null, prevLo = null, prevDir = null, prevSt = null, prevAtr = null;
   for (let i = 0; i < n; i++){
     const b = bars[i], pc = i > 0 ? bars[i-1].c : null;
@@ -562,10 +564,10 @@ function gkSuperTrendDirs(bars, period, mult){
     else if (prevSt === pUp) dir = b.c > up ? -1 : 1;
     else dir = b.c < lo ? 1 : -1;
     const st = dir === -1 ? lo : up;
-    dirs[i] = dir === -1 ? 1 : -1;
+    dirs[i] = dir === -1 ? 1 : -1; line[i] = st;
     prevUp = up; prevLo = lo; prevSt = st; prevAtr = atr; prevDir = dir;
   }
-  return dirs;
+  return {dirs, line};
 }
 // SuperTrend方式の転換点：上昇の区間（SuperTrendが上昇の足）の最高値＝SH、下降の区間の最安値＝SL。
 // 区間が終わった（反対に転換した足が確定した）時点で登録。進行中の区間の高値/安値は保留。最初の区間は使わない。
@@ -1624,6 +1626,12 @@ class GKPanel {
   buildModel(){
     const S = gkSettings(), m = {lines:[], boxes:[], texts:[], rows:[], wm:null, swings:[], divLines:[], rsiLines:[], flips:[]};
     if (S.dowSigns) m.flips = this.dowFlips();
+    // SuperTrendライン（SuperTrend方式のとき、チャートの時間足で。形成中の足も含む）
+    m.stLine = null;
+    if (S.pivotMode === 'st' && S.stLine && this.p.bars.length > 1){
+      const r = gkSuperTrend(this.p.bars, Math.max(1, +S.stPeriod || 20), +S.stMult || 1);
+      m.stLine = r;
+    }
     // ダイバージェンスライン：時間足を「現在足」にしている系統だけ
     if (S.divLines){
       const bars = this.p.bars, seen = new Set();
@@ -1734,6 +1742,28 @@ class GKPanel {
 
   draw(target, background){
     const m = this.model; if (!m || !this.lc){ this.panelRect = null; return; }
+    if (background && m.stLine){
+      // 極細（1デバイスピクセル）・透明度50％。転換した所で線を切り替える
+      target.useBitmapCoordinateSpace(({context:ctx, horizontalPixelRatio:hr, verticalPixelRatio:vr})=>{
+        const ts = this.lc.timeScale(), {dirs, line} = m.stLine, vis = ts.getVisibleLogicalRange();
+        const from = vis ? Math.max(0, Math.floor(vis.from) - 1) : 0, to = vis ? Math.min(line.length - 1, Math.ceil(vis.to) + 1) : line.length - 1;
+        ctx.save(); ctx.lineWidth = 1; ctx.lineJoin = 'round';
+        let cur = null;
+        for (let i = from; i <= to; i++){
+          const v = line[i], d = dirs[i];
+          if (v == null){ if (cur){ ctx.stroke(); cur = null; } continue; }
+          const x = ts.logicalToCoordinate(i), y = this.series.priceToCoordinate(v);
+          if (x == null || y == null){ if (cur){ ctx.stroke(); cur = null; } continue; }
+          const px = Math.round(x * hr) + 0.5, py = Math.round(y * vr) + 0.5;
+          if (cur !== d){
+            if (cur) ctx.stroke();
+            ctx.beginPath(); ctx.strokeStyle = d === 1 ? 'rgba(0,255,255,.5)' : 'rgba(255,0,0,.5)'; ctx.moveTo(px, py); cur = d;
+          } else ctx.lineTo(px, py);
+        }
+        if (cur) ctx.stroke();
+        ctx.restore();
+      });
+    }
     target.useMediaCoordinateSpace(({context:ctx, mediaSize})=>{
       const ts = this.lc.timeScale(), W = mediaSize.width, H = mediaSize.height;
       const X = li => li == null || IsNA(li) ? null : ts.logicalToCoordinate(li);
@@ -1968,7 +1998,7 @@ function gkBuildSettings(box, onChange){
       i.onchange = ()=>{ const v = parseFloat(i.value); if (!(v > 0)){ i.value = S[key]; return; } S[key] = key === 'stPeriod' ? Math.round(v) : v; gkSave(); onChange(); };
       l.appendChild(i); return l;
     };
-    rp.append(num('stPeriod', '期間', 1), num('stMult', '乗数', 0.1));
+    rp.append(num('stPeriod', '期間', 1), num('stMult', '乗数', 0.1), chk(S, 'stLine', 'SuperTrendライン'));
   }
   const pn = document.createElement('p'); pn.className = 'note'; pn.style.margin = '6px 0 0';
   pn.textContent = S.pivotMode === 'st'
