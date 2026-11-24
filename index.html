@@ -506,15 +506,27 @@ function gkRsiNext(st, close, n){
 }
 // 暫定ダイバージェンス：直近の反対側の転換点（登録済み or 登録待ち）より後の最安値（最高値）＝暫定SL（SH）を、
 // 登録済みの直近SL（SH）と比べる。形成中の足を含み、RSIはその足の値（形成中なら今の値）。
-function gkDivProvisional(pivots, pending, closed, rs, forming){
+// stMode（SuperTrend方式）：暫定は「進行中の区間の高値/安値（保留）」の1つだけ。保留の足から形成中の足までで更新する
+function gkDivProvisional(pivots, pending, closed, rs, forming, stMode){
   const res = {div:[], ext:[]};
+  if (stMode && !pending) return res;
   if (!pivots || !closed || !closed.length || !rs) return res;
   const seq = forming ? closed.concat([forming]) : closed;
   const rsi = forming ? rs.rsi.concat([gkRsiNext(rs, forming.c, GK_RSI)]) : rs.rsi;
   const at = new Map(closed.map((b,i)=>[b.t, i]));
-  for (const type of [-1, 1]){
-    const reg = pivots.filter(p=>p.type === type); if (!reg.length) continue;
-    const prev = reg[reg.length-1];
+  for (const type of (stMode ? [pending.type] : [-1, 1])){
+    const reg = pivots.filter(p=>p.type === type); if (!reg.length && !stMode) continue;
+    const prev = reg.length ? reg[reg.length-1] : null;
+    if (stMode){
+      let k = -1;
+      for (let i = 0; i < seq.length; i++){
+        if (seq[i].t < pending.t) continue;
+        if (k < 0 || (type === -1 ? seq[i].l < seq[k].l : seq[i].h > seq[k].h)) k = i;
+      }
+      if (k < 0) continue;
+      gkDivProvPush(res, type, prev, seq[k].t, type === -1 ? seq[k].l : seq[k].h, prev ? rsi[at.get(prev.t)] : null, rsi[k]);
+      continue;
+    }
     const opp = pivots.filter(p=>p.type === -type).map(p=>p.t);
     if (pending && pending.type === -type) opp.push(pending.t);
     if (!opp.length) continue;
@@ -526,20 +538,23 @@ function gkDivProvisional(pivots, pending, closed, rs, forming){
       if (k < 0 || (type === -1 ? seq[i].l <= seq[k].l : seq[i].h >= seq[k].h)) k = i;
     }
     if (k < 0) continue;
-    const price = type === -1 ? seq[k].l : seq[k].h, ri = at.get(prev.t);
-    const r1 = ri == null ? null : rsi[ri], r2 = rsi[k];
-    res.ext.push({t:seq[k].t, type, price});
-    if (r1 == null || r2 == null || !isFinite(r1) || !isFinite(r2)) continue;
-    const d = {base:(type === 1 ? 'SH' : 'SL') + '(暫定)', t1:prev.t, t2:seq[k].t, p1:prev.price, p2:price, r1, r2, prov:true};
-    if (type === -1){
-      if (price < prev.price && r2 > r1) res.div.push({...d, kind:'R', bull:true});
-      if (price > prev.price && r2 < r1) res.div.push({...d, kind:'H', bull:true});
-    } else {
-      if (price > prev.price && r2 < r1) res.div.push({...d, kind:'R', bull:false});
-      if (price < prev.price && r2 > r1) res.div.push({...d, kind:'H', bull:false});
-    }
+    const ri = at.get(prev.t);
+    gkDivProvPush(res, type, prev, seq[k].t, type === -1 ? seq[k].l : seq[k].h, ri == null ? null : rsi[ri], rsi[k]);
   }
   return res;
+}
+// 暫定SH/SL（ext）を登録し、直近の同じ側の転換点（prev）と比べて暫定ダイバージェンスを判定
+function gkDivProvPush(res, type, prev, t, price, r1, r2){
+  res.ext.push({t, type, price});
+  if (!prev || r1 == null || r2 == null || !isFinite(r1) || !isFinite(r2)) return;
+  const d = {base:(type === 1 ? 'SH' : 'SL') + '(暫定)', t1:prev.t, t2:t, p1:prev.price, p2:price, r1, r2, prov:true};
+  if (type === -1){
+    if (price < prev.price && r2 > r1) res.div.push({...d, kind:'R', bull:true});
+    if (price > prev.price && r2 < r1) res.div.push({...d, kind:'H', bull:true});
+  } else {
+    if (price > prev.price && r2 < r1) res.div.push({...d, kind:'R', bull:false});
+    if (price < prev.price && r2 > r1) res.div.push({...d, kind:'H', bull:false});
+  }
 }
 
 // SuperTrend（Pine の ta.supertrend と同じ）。戻り値：各足の向き 1＝上昇 / -1＝下降 / null＝計算前
@@ -569,7 +584,7 @@ function gkSuperTrend(bars, period, mult){
   }
   return {dirs, line};
 }
-// SuperTrend方式の転換点：上昇の区間（SuperTrendが上昇の足）の最高値＝SH、下降の区間の最安値＝SL。
+// SuperTrend方式の転換点：上昇の区間（SuperTrendが上昇の足＋下降に転換した足）の最高値＝SH、下降の区間（＋上昇に転換した足）の最安値＝SL。
 // 区間が終わった（反対に転換した足が確定した）時点で登録。進行中の区間の高値/安値は保留。最初の区間は使わない。
 // end：最新の確定足の位置。戻り値の hidx は end から何本前か（0＝end）。
 function gkSegPivots(bars, dirs, end){
@@ -579,7 +594,8 @@ function gkSegPivots(bars, dirs, end){
     const d = dirs[k]; if (d === null) continue;
     if (segDir === null){ segDir = d; segStart = k; continue; }
     if (d !== segDir){
-      if (!first){ const x = ext(segStart, k - 1, segDir === 1); piv.push({type:segDir, k:x, hidx:end - x, price: segDir === 1 ? bars[x].h : bars[x].l}); }
+      // 区間の最高値/最安値は、反対に転換した足（転換足）も含めて探す
+      if (!first){ const x = ext(segStart, k, segDir === 1); piv.push({type:segDir, k:x, hidx:end - x, price: segDir === 1 ? bars[x].h : bars[x].l}); }
       first = false; segDir = d; segStart = k;
     }
   }
@@ -724,7 +740,7 @@ class GKEngine {
 
   // 暫定ダイバージェンス（forming＝その時間足の形成中の足）
   provisional(forming){
-    const r = gkDivProvisional(this.pivots, this.pending, this.closedSrc, this.rsiState, forming);
+    const r = gkDivProvisional(this.pivots, this.pending, this.closedSrc, this.rsiState, forming, gkSettings().pivotMode === 'st');
     this.divP = r.div; this.provExt = r.ext;
     return r;
   }
@@ -1731,10 +1747,13 @@ class GKPanel {
         const x1 = ts.logicalToCoordinate(l.li1), x2 = ts.logicalToCoordinate(l.li2);
         const y1 = prim.series.priceToCoordinate(l.r1), y2 = prim.series.priceToCoordinate(l.r2);
         if (x1 == null || x2 == null || y1 == null || y2 == null) continue;
-        ctx.strokeStyle = l.color; ctx.lineWidth = 1.5; ctx.setLineDash(l.dash ? [5, 4] : []);
+        // 極細（1デバイスピクセル）・透明度50％
+        ctx.save(); ctx.globalAlpha = .5;
+        ctx.strokeStyle = l.color; ctx.lineWidth = 1 / (window.devicePixelRatio || 1); ctx.setLineDash(l.dash ? [5, 4] : []);
         ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
         ctx.fillStyle = l.color;
-        for (const [x, y] of [[x1, y1], [x2, y2]]){ ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill(); }
+        for (const [x, y] of [[x1, y1], [x2, y2]]){ ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill(); }
+        ctx.restore();
       }
       ctx.setLineDash([]);
     });
@@ -1815,9 +1834,10 @@ class GKPanel {
           if (x1 == null || x2 == null || y1 == null || y2 == null) continue;
           // 線は転換点のラベル（SH/SL）と重ならないよう、少し外側（SHは上・SLは下）に寄せる
           const off = l.bull ? 2 : -2;
-          ctx.strokeStyle = l.color; ctx.lineWidth = 1.5; ctx.setLineDash(l.dash ? [5, 4] : []);
+          // 線は極細（1デバイスピクセル）・透明度50％。ラベルの文字はそのまま
+          ctx.globalAlpha = .5; ctx.strokeStyle = l.color; ctx.lineWidth = 1 / (window.devicePixelRatio || 1); ctx.setLineDash(l.dash ? [5, 4] : []);
           ctx.beginPath(); ctx.moveTo(x1, y1 + off); ctx.lineTo(x2, y2 + off); ctx.stroke();
-          ctx.setLineDash([]);
+          ctx.setLineDash([]); ctx.globalAlpha = 1;
           ctx.font = `bold ${small ? 9 : 11}px sans-serif`; ctx.fillStyle = l.color; ctx.textAlign = 'center';
           ctx.textBaseline = l.bull ? 'top' : 'bottom';
           ctx.fillText(l.label, (x1 + x2) / 2, (y1 + y2) / 2 + (l.bull ? 6 : -6));
