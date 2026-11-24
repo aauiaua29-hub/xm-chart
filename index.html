@@ -427,7 +427,7 @@ function gkLaneDefaults(tf){
 }
 const GK_DEFAULTS = {
   lanes:[gkLaneDefaults('CUR'), gkLaneDefaults('H1'), gkLaneDefaults('H4')],
-  panel:true, watermark:true, toast:true, swingLabels:true, divLines:true, dowSigns:true,
+  panel:true, watermark:true, toast:true, swingLabels:true, swingHistory:true, divLines:true, dowSigns:true,
   pivotMode:'zigzag', stPeriod:20, stMult:1, stLine:true,   // SH/SLの判定方式（全時間足・全銘柄共通）
 };
 let GKS = null;   // 設定（端末ごとに保存）
@@ -555,6 +555,44 @@ function gkDivProvPush(res, type, prev, t, price, r1, r2){
     if (price > prev.price && r2 < r1) res.div.push({...d, kind:'R', bull:false});
     if (price < prev.price && r2 > r1) res.div.push({...d, kind:'H', bull:false});
   }
+}
+
+// 表示用：読み込んだ全確定足で、PivotRange と同じルールの ZigZag 転換点を求める（古い順）。
+// 前後3本（swingSpan）より高い/安い足を候補にし、同じ向きが続く間は高い方/安い方に置き換え、向きが変わったら登録。
+function gkZigZagAll(bars, span){
+  const piv = []; let pend = null;
+  for (let k = span; k < bars.length - span; k++){
+    let isHigh = true, isLow = true;
+    for (let i = 1; i <= span; i++){
+      if (bars[k].h < bars[k-i].h || bars[k].h < bars[k+i].h) isHigh = false;
+      if (bars[k].l > bars[k-i].l || bars[k].l > bars[k+i].l) isLow = false;
+    }
+    if (!isHigh && !isLow) continue;
+    const type = isHigh ? 1 : -1, price = isHigh ? bars[k].h : bars[k].l;
+    if (!pend){ pend = {type, k, price}; continue; }
+    if (pend.type !== type){ piv.push({type:pend.type, t:bars[pend.k].t, price:pend.price}); pend = {type, k, price}; }
+    else if (type === 1 ? price > pend.price : price < pend.price){ pend.k = k; pend.price = price; }
+  }
+  return piv;
+}
+// 表示用：判定範囲（直近77本）より前の SH/SL（参考）。ZigZag/SuperTrend の方式に合わせる。結果は足が変わるまで使い回す
+function gkSwingHistory(e){
+  const cl = e.closedSrc; if (!cl || cl.length < 10 || !e.htf || !e.htf.length) return [];
+  const S = gkSettings(), key = S.pivotMode + ':' + S.stPeriod + ':' + S.stMult + ':' + cl.length + ':' + cl[cl.length-1].t + ':' + cl[0].t;
+  const fw = e.pivots && e.pivots.length ? e.pivots[0].t : '';
+  if (e._swHistKey === key + ':' + fw) return e._swHist;
+  const from = e.htf[Math.min(e.lookback, e.htf.length - 1)].t;   // 判定範囲の最初の足
+  let all;
+  if (S.pivotMode === 'st'){
+    const d = gkSuperTrendDirs(cl, Math.max(1, +S.stPeriod || 20), +S.stMult || 1);
+    all = gkSegPivots(cl, d, cl.length - 1).piv.map(p=>({type:p.type, t:cl[p.k].t, price:p.price}));
+  } else all = gkZigZagAll(cl, e.swingSpan);
+  const hist = all.filter(p=>p.t < from);
+  // ZigZagは判定範囲の中で数え直すため、境目で同じ向きが2つ並ぶことがある。そのときは判定に使う側（範囲内）を残す
+  const firstWin = e.pivots && e.pivots.length ? e.pivots[0] : null;
+  if (firstWin && hist.length && hist[hist.length-1].type === firstWin.type) hist.pop();
+  e._swHistKey = key + ':' + (firstWin ? firstWin.t : ''); e._swHist = hist;
+  return hist;
 }
 
 // SuperTrend（Pine の ta.supertrend と同じ）。戻り値：各足の向き 1＝上昇 / -1＝下降 / null＝計算前
@@ -1678,6 +1716,11 @@ class GKPanel {
           const li = find(pv.t);
           if (li >= 0 && !m.swings.some(x=>x.li === li && x.high === (pv.type === 1))) m.swings.push({li, price:pv.price, high:pv.type === 1});
         }
+        // 判定範囲（直近77本）より前は参考表示（少し薄く）
+        if (S.swingHistory) for (const pv of gkSwingHistory(e)){
+          const li = find(pv.t);
+          if (li >= 0 && !m.swings.some(x=>x.li === li && x.high === (pv.type === 1))) m.swings.push({li, price:pv.price, high:pv.type === 1, hist:true});
+        }
       });
     }
     const last = this.p.bars.length - 1;
@@ -1747,8 +1790,8 @@ class GKPanel {
         const x1 = ts.logicalToCoordinate(l.li1), x2 = ts.logicalToCoordinate(l.li2);
         const y1 = prim.series.priceToCoordinate(l.r1), y2 = prim.series.priceToCoordinate(l.r2);
         if (x1 == null || x2 == null || y1 == null || y2 == null) continue;
-        // 極細（1デバイスピクセル）・透明度50％
-        ctx.save(); ctx.globalAlpha = .5;
+        // 極細（1デバイスピクセル）・不透明
+        ctx.save();
         ctx.strokeStyle = l.color; ctx.lineWidth = 1 / (window.devicePixelRatio || 1); ctx.setLineDash(l.dash ? [5, 4] : []);
         ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
         ctx.fillStyle = l.color;
@@ -1834,10 +1877,10 @@ class GKPanel {
           if (x1 == null || x2 == null || y1 == null || y2 == null) continue;
           // 線は転換点のラベル（SH/SL）と重ならないよう、少し外側（SHは上・SLは下）に寄せる
           const off = l.bull ? 2 : -2;
-          // 線は極細（1デバイスピクセル）・透明度50％。ラベルの文字はそのまま
-          ctx.globalAlpha = .5; ctx.strokeStyle = l.color; ctx.lineWidth = 1 / (window.devicePixelRatio || 1); ctx.setLineDash(l.dash ? [5, 4] : []);
+          // 線は極細（1デバイスピクセル）・不透明
+          ctx.strokeStyle = l.color; ctx.lineWidth = 1 / (window.devicePixelRatio || 1); ctx.setLineDash(l.dash ? [5, 4] : []);
           ctx.beginPath(); ctx.moveTo(x1, y1 + off); ctx.lineTo(x2, y2 + off); ctx.stroke();
-          ctx.setLineDash([]); ctx.globalAlpha = 1;
+          ctx.setLineDash([]);
           ctx.font = `bold ${small ? 9 : 11}px sans-serif`; ctx.fillStyle = l.color; ctx.textAlign = 'center';
           ctx.textBaseline = l.bull ? 'top' : 'bottom';
           ctx.fillText(l.label, (x1 + x2) / 2, (y1 + y2) / 2 + (l.bull ? 6 : -6));
@@ -1849,7 +1892,7 @@ class GKPanel {
         ctx.save(); ctx.font = `bold ${small ? 9 : 11}px sans-serif`; ctx.textAlign = 'center';
         for (const s of m.swings){
           const x = X(s.li), y = Y(s.price); if (x == null || y == null) continue;
-          ctx.fillStyle = s.high ? (s.prov ? 'rgba(255,107,107,.5)' : '#ff6b6b') : (s.prov ? 'rgba(77,208,225,.5)' : '#4dd0e1');
+          ctx.fillStyle = s.high ? (s.prov ? 'rgba(255,107,107,.5)' : s.hist ? 'rgba(255,107,107,.7)' : '#ff6b6b') : (s.prov ? 'rgba(77,208,225,.5)' : s.hist ? 'rgba(77,208,225,.7)' : '#4dd0e1');
           ctx.textBaseline = s.high ? 'bottom' : 'top';
           ctx.fillText((s.high ? 'SH' : 'SL') + (s.prov ? '?' : ''), x, s.high ? y - 3 : y + 3);
         }
@@ -2029,6 +2072,7 @@ function gkBuildSettings(box, onChange){
   const r6 = document.createElement('div'); r6.className = 'gkrow';
   r6.append(chk(S,'panel','情報パネル'), chk(S,'watermark','背景文字'), chk(S,'toast','画面内アラート'),
             chk(S,'swingLabels','SH/SLラベル（時間足が「現在足」の系統のみ）'),
+            chk(S,'swingHistory','過去のSH/SLも表示（直近77本より前は参考・やや薄く）'),
             chk(S,'divLines','ダイバージェンスライン（「現在足」の系統のみ。RSI14を表示中はRSIの段にも）'),
             chk(S,'dowSigns','ダウ転換サイン（チャートの時間足のみ。▲上昇転換 ▼下降転換）'));
   const rs = document.createElement('div'); rs.className = 'gkrow';
