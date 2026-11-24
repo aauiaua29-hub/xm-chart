@@ -427,7 +427,7 @@ function gkLaneDefaults(tf){
 }
 const GK_DEFAULTS = {
   lanes:[gkLaneDefaults('CUR'), gkLaneDefaults('H1'), gkLaneDefaults('H4')],
-  panel:true, watermark:true, toast:true, swingLabels:true, swingHistory:true, divLines:true, dowSigns:true,
+  panel:true, watermark:true, toast:true, swingLabels:true, swingHistory:true, divLines:true, mtfDivPts:true, mtfDivTfs:{M5:true, M15:true, M30:true, H1:true, H4:true, D1:true}, dowSigns:true,
   pivotMode:'zigzag', stPeriod:20, stMult:1, stLine:true,   // SH/SLの判定方式（全時間足・全銘柄共通）
 };
 let GKS = null;   // 設定（端末ごとに保存）
@@ -436,6 +436,7 @@ function gkSettings(){
   const saved = store.get('gk', {}) || {};
   GKS = Object.assign({}, GK_DEFAULTS, saved);
   GKS.lanes = GK_DEFAULTS.lanes.map((d,i)=>Object.assign({}, d, (saved.lanes || [])[i] || {}));
+  GKS.mtfDivTfs = Object.assign({}, GK_DEFAULTS.mtfDivTfs, saved.mtfDivTfs || {});
   return GKS;
 }
 function gkSave(){ store.set('gk', GKS); }
@@ -1417,8 +1418,61 @@ class GKPanel {
     this.started = false; this.currentBar = null; this.lastAlertBar = null;
     this.quiet = true;   // 読み込み直後の1回目はアラートを画面に出さない
     this.htf = {}; this.fetching = {};
+    this.mtfStart();
     this.refresh();
     this.loadHtf();
+  }
+
+  /* ---- 他の時間足（5m〜1D）の暫定ダイバージェンス：2点目の価格をチャートに表示するためのデータ ---- */
+  mtfWanted(){ const S = gkSettings(); return this.on() && S.divLines && S.mtfDivPts && this.p.sym; }
+  mtfStart(){
+    this.mtfStop();
+    this.mtfPts = []; this.mtfData = {}; this.mtfDirty = true; this.mtfAt = 0;
+    if (!this.mtfWanted()) return;
+    const seq = this.mtfSeq, key = this.p.sym.key;
+    const S = gkSettings();
+    for (const tf of GKD_TFS){
+      if (tf === this.p.tf) continue;   // チャートの時間足は既存のダイバージェンスラインで表示
+      if (!S.mtfDivTfs[tf]) continue;   // 表示しない時間足はデータも受信しない
+      this.mtfLoad(tf, seq, key);
+      if (!Replay.active) this.mtfUnsubs.push(G.src.subscribe(key, tf, b=>this.mtfOnBar(tf, b, seq, key), ()=>this.mtfLoad(tf, seq, key)));
+    }
+  }
+  mtfStop(){
+    this.mtfSeq = (this.mtfSeq || 0) + 1;
+    for (const u of (this.mtfUnsubs || [])) try{ u(); }catch(e){}
+    this.mtfUnsubs = []; this.mtfData = {}; this.mtfPts = [];
+  }
+  async mtfLoad(tf, seq, key){
+    try{
+      const bars = Replay.active ? await Replay.get(key, tf) : await G.src.history(key, tf, GK_FETCH);
+      if (seq !== this.mtfSeq) return;
+      this.mtfData[tf] = Replay.active ? bars : bars.slice();
+      this.mtfDirty = true; this.p.schedule(false);
+    }catch(e){}
+  }
+  mtfOnBar(tf, b, seq, key){
+    const bars = this.mtfData[tf]; if (seq !== this.mtfSeq || !bars || !bars.length) return;
+    const last = bars[bars.length-1];
+    if (b.t === last.t) bars[bars.length-1] = b;
+    else if (b.t > last.t){ bars.push(b); this.mtfLoad(tf, seq, key); }
+    this.mtfDirty = true;
+  }
+  // 各時間足の暫定ダイバージェンスを求める（ライブは最短1秒おき。リプレイは毎回その時刻で）
+  mtfCompute(){
+    if (!this.mtfWanted()) return [];
+    const now = performance.now();
+    if (!Replay.active && !(this.mtfDirty && now - this.mtfAt >= 1000)) return this.mtfPts;
+    const out = [], S = gkSettings();
+    for (const tf of GKD_TFS){
+      let bars = this.mtfData[tf]; if (!bars || tf === this.p.tf || !S.mtfDivTfs[tf]) continue;
+      if (Replay.active) bars = Replay.view(bars, TF_SEC[tf], this.p.replayStep, Replay.T);
+      const e = gkLaneCompute(bars, tf);
+      if (!e.ready) continue;
+      for (const d of (e.divP || [])) out.push({tf, d});
+    }
+    this.mtfPts = out; this.mtfDirty = false; this.mtfAt = now;
+    return out;
   }
   neededTfs(){
     const s = gkSettings(), chartSec = TF_SEC[this.p.tf], out = new Set();
@@ -1702,6 +1756,33 @@ class GKPanel {
         }
       });
     }
+    // 他の時間足の暫定ダイバージェンス：2点目（暫定SH/SL）の価格
+    m.mtfDiv = [];
+    if (S.divLines && S.mtfDivPts){
+      const bars = this.p.bars, n = bars.length, chartSec = TF_SEC[this.p.tf];
+      const idxAtOrBefore = t=>{ let lo = 0, hi = n - 1, r = -1; while (lo <= hi){ const mid = (lo + hi) >> 1; if (bars[mid].t <= t){ r = mid; lo = mid + 1; } else hi = mid - 1; } return r; };
+      const seen = new Set();
+      for (const {tf, d} of this.mtfCompute()){
+        const high = d.base.startsWith('SH'), key = tf + ':' + d.t2 + ':' + high;
+        const sec = TF_SEC[tf];
+        let li = null;
+        if (n && d.t2 >= bars[0].t){
+          if (sec <= chartSec) li = idxAtOrBefore(d.t2);   // 下位足：その時刻を含むチャートの足
+          else {                                           // 上位足：その足の期間の中で高値（安値）を付けたチャートの足
+            let k = idxAtOrBefore(d.t2); if (k >= 0 && bars[k].t < d.t2) k++;
+            let best = -1;
+            for (let i = Math.max(0, k); i < n && bars[i].t < d.t2 + sec; i++){
+              if (best < 0 || (high ? bars[i].h > bars[best].h : bars[i].l < bars[best].l)) best = i;
+            }
+            li = best >= 0 ? best : null;
+          }
+        }
+        const label = `${gkTFText(sec/60)} ${high ? 'SH?' : 'SL?'} ${gkDivLabel(d)}`;
+        if (seen.has(key + label)) continue; seen.add(key + label);
+        m.mtfDiv.push({li, price:d.p2, high, bull:d.bull, label, color:d.bull ? '#4dd0e1' : '#ff6b6b', sec});
+      }
+      m.mtfDiv.sort((a, b)=>b.sec - a.sec);
+    }
     // SH/SL：時間足を「現在足」にしている系統だけ
     if (S.swingLabels){
       const bars = this.p.bars;
@@ -1884,6 +1965,40 @@ class GKPanel {
           ctx.font = `bold ${small ? 9 : 11}px sans-serif`; ctx.fillStyle = l.color; ctx.textAlign = 'center';
           ctx.textBaseline = l.bull ? 'top' : 'bottom';
           ctx.fillText(l.label, (x1 + x2) / 2, (y1 + y2) / 2 + (l.bull ? 6 : -6));
+        }
+        ctx.restore();
+        ctx.font = `${small ? 10 : 12}px sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      }
+      if (m.mtfDiv && m.mtfDiv.length){
+        // 他の時間足の暫定ダイバージェンス：2点目に◆、そこから右端まで点線、右端に時間足・種類・価格
+        ctx.save();
+        const fs = small ? 9 : 11, used = [], dg = this.p.digits != null ? this.p.digits : 5;
+        ctx.font = `bold ${fs}px sans-serif`; ctx.textAlign = 'left';
+        for (const q of m.mtfDiv){
+          const y = Y(q.price); if (y == null) continue;
+          const xp = q.li != null ? X(q.li) : null, x0 = xp != null ? Math.max(0, xp) : 0;
+          ctx.strokeStyle = q.color; ctx.lineWidth = 1 / (window.devicePixelRatio || 1); ctx.setLineDash([2, 3]);
+          ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(W, y); ctx.stroke(); ctx.setLineDash([]);
+          if (xp != null && xp >= -6 && xp <= W + 6){
+            const r = small ? 3.5 : 4.5;
+            ctx.fillStyle = q.color; ctx.beginPath();
+            ctx.moveTo(xp, y - r); ctx.lineTo(xp + r, y); ctx.lineTo(xp, y + r); ctx.lineTo(xp - r, y); ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#0f1115'; ctx.lineWidth = 1; ctx.stroke();
+          }
+          // 文字は◆のすぐ右（◆が画面の左外なら左端）。SHは線の上、SLは線の下。重なるときは上下にずらす
+          const text = `${q.label} ${(+q.price).toFixed(dg)}`, tw = ctx.measureText(text).width;
+          const vis = xp != null && xp >= 0 && xp <= W;
+          // 右端には建玉・Askなどの価格ラベルが出るので、そこにかかるときは◆の左側に置く
+          const rightLimit = W - 75;
+          let tx = vis ? xp + 8 : 6;
+          if (tx + tw > rightLimit) tx = vis ? xp - 8 - tw : rightLimit - tw;
+          tx = Math.max(4, tx);
+          let ty = q.high ? y - 4 : y + fs + 4;
+          const hit = yy=>used.some(u=>Math.abs(u.y - yy) < fs + 3 && u.x1 < tx + tw + 6 && tx - 3 < u.x2);
+          for (let tries = 0; tries < 8 && hit(ty); tries++) ty += q.high ? -(fs + 3) : (fs + 3);
+          used.push({y:ty, x1:tx - 3, x2:tx + tw + 3});
+          ctx.fillStyle = 'rgba(15,17,21,.8)'; ctx.fillRect(tx - 3, ty - fs - 1, tw + 6, fs + 4);
+          ctx.fillStyle = q.color; ctx.textBaseline = 'alphabetic'; ctx.fillText(text, tx, ty);
         }
         ctx.restore();
         ctx.font = `${small ? 10 : 12}px sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
@@ -2074,12 +2189,19 @@ function gkBuildSettings(box, onChange){
             chk(S,'swingLabels','SH/SLラベル（時間足が「現在足」の系統のみ）'),
             chk(S,'swingHistory','過去のSH/SLも表示（直近77本より前は参考・やや薄く）'),
             chk(S,'divLines','ダイバージェンスライン（「現在足」の系統のみ。RSI14を表示中はRSIの段にも）'),
+            chk(S,'mtfDivPts','他の時間足（5m〜1D）の暫定ダイバージェンスの2点目をチャートに表示'),
             chk(S,'dowSigns','ダウ転換サイン（チャートの時間足のみ。▲上昇転換 ▼下降転換）'));
+  // 他の時間足の暫定ダイバージェンス：表示する時間足
+  const r7 = document.createElement('div'); r7.className = 'gkrow';
+  const l7 = document.createElement('span'); l7.className = 'note'; l7.textContent = '2点目を表示する時間足：';
+  r7.append(l7, ...GKD_TFS.map(tf=>chk(S.mtfDivTfs, tf, gkTFText(TF_SEC[tf] / 60))));
+  const n7 = document.createElement('p'); n7.className = 'note'; n7.style.margin = '2px 0 0';
+  n7.textContent = 'チャートと同じ時間足は、ダイバージェンスラインで表示されるので対象外です。全銘柄・全画面共通。';
   const rs = document.createElement('div'); rs.className = 'gkrow';
   const rb = document.createElement('button'); rb.textContent = '初期設定に戻す';
   rb.onclick = ()=>{ GKS = JSON.parse(JSON.stringify(GK_DEFAULTS)); gkSave(); onChange(); buildIndList(); };
   rs.appendChild(rb);
-  fd.append(r6, rs); wrap.appendChild(fd);
+  fd.append(r6, r7, n7, rs); wrap.appendChild(fd);
   box.appendChild(wrap);
 }
 
@@ -3031,6 +3153,7 @@ class Panel {
 
   destroy(){
     if (gkDetailPanel === this) gkCloseDetail();
+    this.gk.mtfStop();
     this.loadSeq++;
     if (this.unsub){ this.unsub(); this.unsub = null; }
     this.chart.remove(); this.el.remove();
