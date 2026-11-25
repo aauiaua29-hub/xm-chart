@@ -100,6 +100,16 @@
   #scan{position:absolute;inset:0;z-index:8;background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
   .sc-tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px;border-bottom:1px solid var(--line);background:var(--panel)}
   .sc-tools .seg button{padding:4px 8px;font-size:12px}
+  #scanSetup{padding:6px 10px 2px;border-bottom:1px solid var(--line);max-height:45vh;overflow:auto}
+  #scanSetup .st-head{font-size:13px;color:var(--muted);margin-bottom:4px} #scanSetup .st-head b{color:var(--warn);font-size:15px}
+  #scanSetup .st-empty{font-size:12px;color:var(--muted);padding:2px 0 6px}
+  #scanSetup table{border-collapse:collapse;font-size:13px;min-width:100%}
+  #scanSetup th,#scanSetup td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:left;vertical-align:top}
+  #scanSetup thead th{color:var(--muted);font-weight:600;font-size:12px}
+  #scanSetup tbody tr{cursor:pointer} #scanSetup tbody tr:hover{background:rgba(255,255,255,.04)}
+  #scanSetup .up{color:#66bb6a;font-weight:700} #scanSetup .dn{color:#ffa726;font-weight:700}
+  #scanSetup .st-wait{color:#ffd54f;font-weight:700} #scanSetup .st-brk{color:#9aa0a6}
+  #scanSetup .st-why{font-size:12px;color:#c9ced6;white-space:normal;min-width:220px}
   #scanSummary{padding:6px 10px;font-size:13px;color:var(--muted)} #scanSummary b{color:var(--warn);font-size:15px}
   #scanTable{flex:1;overflow:auto;padding:0 6px}
   #scanTable table{border-collapse:separate;border-spacing:0;font-size:13px;min-width:100%}
@@ -185,6 +195,7 @@
       <button id="scanRefresh">更新</button>
       <span id="scanStatus" class="note"></span>
     </div>
+    <div id="scanSetup"></div>
     <div id="scanSummary"></div>
     <div id="scanTable"></div>
     <p class="note sc-legend">▲上昇 ▼下降　なし＝ZONEなし　数字＝現在値からZONEまでの距離（pips。↓はZONEが下、↑は上）　接触中＝その時間足の現在のローソク足がZONEにかかっている（初・2・3…＝このZONEへの何回目の接触か）　↑↑↑/↓↓↓＝直近の高値（安値）のあとZONEまで戻った　R_Div/H_Div＝レギュラー/ヒドゥン・ダイバージェンス（RSI14、直近2つのSH同士・SL同士。▲強気 ▼弱気。(暫定)＝まだ確定していない今の安値・高値で判定、更新で変わる）　マスをタップするとチャートを開きます</p>
@@ -427,7 +438,7 @@ function gkLaneDefaults(tf){
 }
 const GK_DEFAULTS = {
   lanes:[gkLaneDefaults('CUR'), gkLaneDefaults('H1'), gkLaneDefaults('H4')],
-  panel:true, watermark:true, toast:true, swingLabels:true, swingHistory:true, divLines:true, mtfDivPts:true, mtfDivTfs:{M5:true, M15:true, M30:true, H1:true, H4:true, D1:true}, dowSigns:true,
+  panel:true, watermark:true, toast:true, swingLabels:true, swingHistory:true, divLines:true, mtfDivPts:true, mtfDivTfs:{M5:true, M15:true, M30:true, H1:true, H4:true, D1:true}, setupMarks:true, dowSigns:true,
   pivotMode:'zigzag', stPeriod:20, stMult:1, stLine:true,   // SH/SLの判定方式（全時間足・全銘柄共通）
 };
 let GKS = null;   // 設定（端末ごとに保存）
@@ -1424,16 +1435,22 @@ class GKPanel {
   }
 
   /* ---- 他の時間足（5m〜1D）の暫定ダイバージェンス：2点目の価格をチャートに表示するためのデータ ---- */
-  mtfWanted(){ const S = gkSettings(); return this.on() && S.divLines && S.mtfDivPts && this.p.sym; }
+  // 受信する時間足：表示する暫定ダイバージェンスの時間足＋（1mチャートなら）セットアップ判定の1H・4H・5m・15m
+  mtfTfs(){
+    const S = gkSettings(); if (!this.on() || !this.p.sym) return [];
+    const set = new Set();
+    if (S.divLines && S.mtfDivPts) for (const tf of GKD_TFS) if (S.mtfDivTfs[tf]) set.add(tf);
+    if (S.setupMarks && this.p.tf === 'M1') for (const tf of GK_SETUP_LANE_TFS) set.add(tf);
+    set.delete(this.p.tf);
+    return [...set];
+  }
+  mtfWanted(){ return this.mtfTfs().length > 0; }
   mtfStart(){
     this.mtfStop();
     this.mtfPts = []; this.mtfData = {}; this.mtfDirty = true; this.mtfAt = 0;
     if (!this.mtfWanted()) return;
     const seq = this.mtfSeq, key = this.p.sym.key;
-    const S = gkSettings();
-    for (const tf of GKD_TFS){
-      if (tf === this.p.tf) continue;   // チャートの時間足は既存のダイバージェンスラインで表示
-      if (!S.mtfDivTfs[tf]) continue;   // 表示しない時間足はデータも受信しない
+    for (const tf of this.mtfTfs()){     // 使わない時間足はデータも受信しない
       this.mtfLoad(tf, seq, key);
       if (!Replay.active) this.mtfUnsubs.push(G.src.subscribe(key, tf, b=>this.mtfOnBar(tf, b, seq, key), ()=>this.mtfLoad(tf, seq, key)));
     }
@@ -1441,7 +1458,7 @@ class GKPanel {
   mtfStop(){
     this.mtfSeq = (this.mtfSeq || 0) + 1;
     for (const u of (this.mtfUnsubs || [])) try{ u(); }catch(e){}
-    this.mtfUnsubs = []; this.mtfData = {}; this.mtfPts = [];
+    this.mtfUnsubs = []; this.mtfData = {}; this.mtfPts = []; this.mtfSetups = [];
   }
   async mtfLoad(tf, seq, key){
     try{
@@ -1459,18 +1476,20 @@ class GKPanel {
     this.mtfDirty = true;
   }
   // 各時間足の暫定ダイバージェンスを求める（ライブは最短1秒おき。リプレイは毎回その時刻で）
+  // あわせて、1mチャートではセットアップ（this.mtfSetups）も求める
   mtfCompute(){
-    if (!this.mtfWanted()) return [];
+    if (!this.mtfWanted()){ this.mtfPts = []; this.mtfSetups = []; return []; }
     const now = performance.now();
     if (!Replay.active && !(this.mtfDirty && now - this.mtfAt >= 1000)) return this.mtfPts;
-    const out = [], S = gkSettings();
-    for (const tf of GKD_TFS){
-      let bars = this.mtfData[tf]; if (!bars || tf === this.p.tf || !S.mtfDivTfs[tf]) continue;
+    const out = [], S = gkSettings(), lanes = {};
+    for (const tf of this.mtfTfs()){
+      let bars = this.mtfData[tf]; if (!bars) continue;
       if (Replay.active) bars = Replay.view(bars, TF_SEC[tf], this.p.replayStep, Replay.T);
       const e = gkLaneCompute(bars, tf);
-      if (!e.ready) continue;
-      for (const d of (e.divP || [])) out.push({tf, d});
+      if (e.ready) lanes[tf] = e;
     }
+    if (S.divLines && S.mtfDivPts) for (const tf of GKD_TFS) if (S.mtfDivTfs[tf] && lanes[tf]) for (const d of (lanes[tf].divP || [])) out.push({tf, d});
+    this.mtfSetups = (S.setupMarks && this.p.tf === 'M1') ? gkSetupFind(lanes).map(s=>Object.assign(s, gkSetupMark(this.p.bars, s))) : [];
     this.mtfPts = out; this.mtfDirty = false; this.mtfAt = now;
     return out;
   }
@@ -1783,6 +1802,19 @@ class GKPanel {
       }
       m.mtfDiv.sort((a, b)=>b.sec - a.sec);
     }
+    // セットアップの1mマーク（1mチャートのとき）。同じマークは1本にまとめ、理由を並べる
+    m.setups = [];
+    if (S.setupMarks && this.p.tf === 'M1'){
+      if (!(S.divLines && S.mtfDivPts)) this.mtfCompute();
+      const grp = new Map();
+      for (const s of (this.mtfSetups || [])){
+        if (s.status !== 'OK') continue;
+        const key = s.dir + ':' + s.mark + ':' + s.k;
+        if (!grp.has(key)) grp.set(key, {li:s.k, mark:s.mark, kind:s.kind, dir:s.dir, ext:s.ext, brokeT:s.brokeT, reasons:[]});
+        const r = gkSetupReason(s); if (!grp.get(key).reasons.includes(r)) grp.get(key).reasons.push(r);
+      }
+      m.setups = [...grp.values()];
+    }
     // SH/SL：時間足を「現在足」にしている系統だけ
     if (S.swingLabels){
       const bars = this.p.bars;
@@ -2003,6 +2035,35 @@ class GKPanel {
         ctx.restore();
         ctx.font = `${small ? 10 : 12}px sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
       }
+      if (m.setups && m.setups.length){
+        // セットアップの1mマーク：2点目の足から右端まで線。ブレイク前は実線、ブレイク後は点線
+        ctx.save();
+        const fs = small ? 10 : 12, dg = this.p.digits != null ? this.p.digits : 5, usedY = [];
+        for (const q of m.setups){
+          const y = Y(q.mark); if (y == null) continue;
+          const xp = X(q.li), x0 = xp != null ? Math.max(0, xp) : 0, col = q.dir === -1 ? '#ffa726' : '#66bb6a';
+          ctx.strokeStyle = col; ctx.lineWidth = q.brokeT ? 1 : 2; ctx.setLineDash(q.brokeT ? [4, 3] : []);
+          ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(W, y); ctx.stroke(); ctx.setLineDash([]);
+          const ye = Y(q.ext);
+          if (xp != null && ye != null && xp >= 0 && xp <= W){      // 2点目の足に○
+            ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(xp, ye, small ? 4 : 5, 0, Math.PI * 2); ctx.stroke();
+          }
+          const head = `${q.dir === -1 ? '売り' : '買い'}ライン ${(+q.mark).toFixed(dg)}（${q.kind}）` + (q.brokeT ? `　ブレイク済 ${fmtJst(q.brokeT).split(' ')[1]}` : '　待機中');
+          const lines = [head, ...q.reasons];
+          ctx.font = `bold ${fs}px sans-serif`; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+          const tw = Math.max(...lines.map(t=>ctx.measureText(t).width)), lh = fs + 3, bh = lh * lines.length + 4;
+          // 売りは線の下、買いは線の上に置く（重なればずらす）
+          let top = q.dir === -1 ? y + 4 : y - 4 - bh;
+          for (let t = 0; t < 6 && usedY.some(u=>top < u.b && top + bh > u.t); t++) top += q.dir === -1 ? bh + 2 : -(bh + 2);
+          usedY.push({t:top, b:top + bh});
+          const rx = W - 75;
+          ctx.fillStyle = 'rgba(15,17,21,.85)'; ctx.fillRect(rx - tw - 8, top, tw + 12, bh);
+          ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(rx - tw - 8 + .5, top + .5, tw + 11, bh - 1);
+          lines.forEach((t, i)=>{ ctx.font = `${i ? '' : 'bold '}${i ? fs - 1 : fs}px sans-serif`; ctx.fillStyle = i ? '#c9ced6' : col; ctx.fillText(t, rx, top + 2 + lh * (i + 1) - 3); });
+        }
+        ctx.restore();
+        ctx.font = `${small ? 10 : 12}px sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      }
       if (m.swings.length){
         ctx.save(); ctx.font = `bold ${small ? 9 : 11}px sans-serif`; ctx.textAlign = 'center';
         for (const s of m.swings){
@@ -2073,6 +2134,55 @@ function gkLaneCompute(bars, tf){
   e.provisional(last);
   e.ready = true; e.status = 'OK';
   return e;
+}
+
+/* ---------- セットアップ：1H/4HのZONEに接触中 × 5m/15mで同じ向きのダイバージェンス → 1mのマーク価格 ---------- */
+const GK_SETUP_ZONE_TFS = ['H1','H4'], GK_SETUP_DIV_TFS = ['M5','M15'];
+const GK_SETUP_LANE_TFS = GK_SETUP_ZONE_TFS.concat(GK_SETUP_DIV_TFS);
+// lanes：{時間足: gkLaneCompute の結果}。上昇ZONE（dir=1）×強気Div ＝ 買い、下降ZONE（dir=-1）×弱気Div ＝ 売り
+function gkSetupFind(lanes){
+  const out = [];
+  for (const ztf of GK_SETUP_ZONE_TFS){
+    const z = lanes[ztf]; if (!z || !z.ready || !z.contact) continue;
+    const dir = z.st.trendDirection; if (dir !== 1 && dir !== -1) continue;
+    for (const dtf of GK_SETUP_DIV_TFS){
+      const e = lanes[dtf]; if (!e || !e.ready) continue;
+      for (const d of (e.div || []).concat(e.divP || [])) if (d.bull === (dir === 1))
+        out.push({ztf, dir, zt:z.st.Zonetop, zb:z.st.Zonebottom, touches:z.touches, dtf, d});
+    }
+  }
+  return out;
+}
+// 1mのマーク価格。売り：2点目の高値を付けた1mの足で、その足が確定した時点の1mの押し安値。
+// 1mが上昇トレンドでない（押し安値がない）ときは、その高値より前で直近の1mのSL。買いは上下を逆に。
+// ブレイク：その足より後の1mの確定足の終値がマークを抜けたら
+function gkSetupMark(m1, s){
+  const sell = s.dir === -1, d = s.d, sec = TF_SEC[s.dtf], n = m1 ? m1.length : 0;
+  if (n < GK_KEEP + 2) return {status:'1m履歴待機'};
+  let lo = 0, hi = n - 1;                                  // d.t2 以降の最初の1m足
+  while (lo < hi){ const mid = (lo + hi) >> 1; if (m1[mid].t < d.t2) lo = mid + 1; else hi = mid; }
+  let k = -1;
+  for (let i = lo; i < n && m1[i].t < d.t2 + sec; i++) if (m1[i].t >= d.t2 && (k < 0 || (sell ? m1[i].h > m1[k].h : m1[i].l < m1[k].l))) k = i;
+  if (k < 0) return {status:'1mデータ範囲外'};
+  const upto = Math.min(n, k + 2);                         // 高値の足が確定した時点（まだ形成中なら今）
+  if (upto < GK_KEEP + 1) return {status:'1mデータ範囲外'};
+  const x = gkLaneCompute(upto === n ? m1 : m1.slice(0, upto), 'M1');
+  if (!x.ready) return {status:'1m計算不可'};
+  const v = x.st; let mark = null, kind = '';
+  if (sell && v.trendDirection === 1 && !IsNA(v.minlow)){ mark = v.minlow; kind = '1m押し安値'; }
+  else if (!sell && v.trendDirection === -1 && !IsNA(v.maxhigh)){ mark = v.maxhigh; kind = '1m戻り高値'; }
+  else {
+    const want = sell ? -1 : 1, tk = m1[k].t;
+    const c = (x.pivots || []).concat(x.pending ? [x.pending] : []).filter(p=>p.type === want && p.t < tk);
+    if (c.length){ const p = c.reduce((a, b)=>b.t > a.t ? b : a); mark = p.price; kind = sell ? '1m直前のSL' : '1m直前のSH'; }
+  }
+  if (mark == null) return {status:'1mマークなし', k};
+  let brokeT = null;
+  for (let j = k; j < n - 1; j++) if (sell ? m1[j].c < mark : m1[j].c > mark){ brokeT = m1[j].t; break; }
+  return {status:'OK', mark, kind, k, tExt:m1[k].t, ext:sell ? m1[k].h : m1[k].l, price:m1[n-1].c, brokeT};
+}
+function gkSetupReason(s){
+  return `${gkTFText(TF_SEC[s.ztf]/60)}${s.dir === 1 ? '↑' : '↓'}接触中(${gkTouchLabel(s.touches)})・${gkTFText(TF_SEC[s.dtf]/60)} ${gkDivLabel(s.d)}`;
 }
 
 /* ---------- 右下の表の詳細画面（現在足＋5m〜1Dの7系統） ---------- */
@@ -2190,7 +2300,8 @@ function gkBuildSettings(box, onChange){
             chk(S,'swingHistory','過去のSH/SLも表示（直近77本より前は参考・やや薄く）'),
             chk(S,'divLines','ダイバージェンスライン（「現在足」の系統のみ。RSI14を表示中はRSIの段にも）'),
             chk(S,'mtfDivPts','他の時間足（5m〜1D）の暫定ダイバージェンスの2点目をチャートに表示'),
-            chk(S,'dowSigns','ダウ転換サイン（チャートの時間足のみ。▲上昇転換 ▼下降転換）'));
+            chk(S,'dowSigns','ダウ転換サイン（チャートの時間足のみ。▲上昇転換 ▼下降転換）'),
+            chk(S,'setupMarks','セットアップの1mマーク（1H/4H ZONE接触中＋5m/15m同方向Div。1mチャートで表示）'));
   // 他の時間足の暫定ダイバージェンス：表示する時間足
   const r7 = document.createElement('div'); r7.className = 'gkrow';
   const l7 = document.createElement('span'); l7.className = 'note'; l7.textContent = '2点目を表示する時間足：';
@@ -2390,12 +2501,12 @@ function gkScanCompute(bars, tf){
   const v = x.st, dir = v.trendDirection;
   return {ok:true, dir, hasZone:(dir === 1 || dir === -1) && v.Zonecount > 0, zt:v.Zonetop, zb:v.Zonebottom,
           contact:x.contact, reached: dir === 1 ? v.alertedL : dir === -1 ? v.alertedS : false,
-          price:bars[bars.length-1].c, touches:x.touches, div:(x.div || []).concat(x.divP || [])};
+          price:bars[bars.length-1].c, touches:x.touches, div:(x.div || []).concat(x.divP || []), lane:x};
 }
 const Scanner = {
   on:false, loading:false, timer:null, lastUpdate:null, seq:0,
   tfs: null, onlyContact:false, sortContact:false, interval:30,
-  data:{}, results:{},
+  data:{}, results:{}, setups:{},
   init(){
     this.tfs = store.get('scanTfs', ['M5','M15','H1','H4','D1']).filter(t=>TIMEFRAMES.includes(t));
     this.onlyContact = store.get('scanOnly', false); this.sortContact = store.get('scanSort', false); this.onlyDiv = store.get('scanDiv', false);
@@ -2421,19 +2532,21 @@ const Scanner = {
   },
 
   // 現在のローソク足（全時間足）を1銘柄ずつ取得
-  async liveSnapshot(key){
-    if (G.demo){ const o = {}; for (const tf of this.tfs) o[tf] = Demo.aggregate(key, tf, 1)[0]; return o; }
+  async liveSnapshot(key, tfs){
+    if (G.demo){ const o = {}; for (const tf of tfs) o[tf] = Demo.aggregate(key, tf, 1)[0]; return o; }
     return await Firebase.get(`/live/${key}`) || {};
   },
   async refresh(force){
     if (!G.src || this.loading) return;
     const seq = ++this.seq; this.loading = true; this.paintStatus('更新中…');
     const syms = G.symbols, jobs = [];
+    // 表示する時間足＋セットアップ判定に使う時間足（1H・4H・5m・15m）。1mはセットアップ候補の銘柄だけ
+    const tfs = TIMEFRAMES.filter(tf=>this.tfs.includes(tf) || GK_SETUP_LANE_TFS.includes(tf));
     for (const s of syms) jobs.push(async ()=>{
       let live = {};
-      try{ live = await this.liveSnapshot(s.key); }catch(e){}
+      try{ live = await this.liveSnapshot(s.key, tfs.concat(this.setups[s.key] ? ['M1'] : [])); }catch(e){}
       const d = this.data[s.key] || (this.data[s.key] = {});
-      for (const tf of this.tfs){
+      const fetchTf = async tf=>{
         let bars = d[tf];
         const lb = live[tf] && live[tf].t ? {t:+live[tf].t, o:+live[tf].o, h:+live[tf].h, l:+live[tf].l, c:+live[tf].c, v:+(live[tf].v||0)} : null;
         // 初回、または新しい足ができたときは履歴を取り直す
@@ -2444,8 +2557,19 @@ const Scanner = {
           if (lb.t === bars[bars.length-1].t) bars[bars.length-1] = lb;
           else if (lb.t > bars[bars.length-1].t) bars.push(lb);
         }
+        return bars;
+      };
+      for (const tf of tfs){
+        const bars = await fetchTf(tf);
         (this.results[s.key] || (this.results[s.key] = {}))[tf] = bars ? gkScanCompute(bars, tf) : {ok:false, status:'取得失敗'};
       }
+      // セットアップ：1H/4HのZONEに接触中 × 5m/15mで同じ向きのDiv → 1mのマーク
+      const lanes = {}; for (const tf of GK_SETUP_LANE_TFS){ const r = this.results[s.key][tf]; if (r && r.ok) lanes[tf] = r.lane; }
+      const found = gkSetupFind(lanes);
+      if (found.length){
+        const m1 = await fetchTf('M1');
+        this.setups[s.key] = found.map(x=>Object.assign(x, m1 ? gkSetupMark(m1, x) : {status:'1m取得失敗'}));
+      } else { delete this.setups[s.key]; delete d.M1; }
       if (seq === this.seq) this.renderSoon();
     });
     // 同時に6銘柄ずつ取得
@@ -2492,8 +2616,41 @@ const Scanner = {
     }
     return `<td ${attrs}>${arrow}<span class="dist">${r.dir === 0 ? '' : txt}</span>${mark}${dv}</td>`;
   },
+  // セットアップの表（同じ銘柄・同じマークは1行にまとめる）
+  renderSetups(){
+    const rows = [];
+    for (const s of G.symbols){
+      const list = this.setups[s.key]; if (!list) continue;
+      const grp = new Map();
+      for (const x of list){
+        const key = x.status === 'OK' ? x.dir + ':' + x.mark + ':' + x.k : x.dir + ':' + x.status;
+        if (!grp.has(key)) grp.set(key, {x, reasons:[]});
+        const r = gkSetupReason(x); if (!grp.get(key).reasons.includes(r)) grp.get(key).reasons.push(r);
+      }
+      for (const g of grp.values()) rows.push({sym:s, ...g});
+    }
+    const wait = rows.filter(r=>r.x.status === 'OK' && !r.x.brokeT).length;
+    let html = `<div class="st-head">セットアップ <b>${rows.length}</b> 件（待機中 ${wait}）<span class="note">　1H/4HのZONEに接触中 × 5m/15mで同じ向きのダイバージェンス → 1mのマーク（終値でブレイク）</span></div>`;
+    if (!rows.length){ $('scanSetup').innerHTML = html + '<div class="st-empty">該当なし</div>'; return; }
+    html += '<table><thead><tr><th>銘柄</th><th>方向</th><th>1mマーク</th><th>状態</th><th>現在値まで</th><th>根拠</th></tr></thead><tbody>';
+    rows.sort((a, b)=>(!!a.x.brokeT - !!b.x.brokeT) || a.sym.order - b.sym.order);
+    for (const r of rows){
+      const x = r.x, sym = r.sym, dg = sym.digits, sell = x.dir === -1;
+      const mul = dg === 3 || dg === 5 ? Math.pow(10, dg-1) : Math.pow(10, dg), unit = dg === 3 || dg === 5 ? 'pips' : 'pt';
+      let mark = '–', state = esc(x.status), dist = '–';
+      if (x.status === 'OK'){
+        mark = `<b>${(+x.mark).toFixed(dg)}</b><span class="note">（${x.kind}）</span>`;
+        state = x.brokeT ? `<span class="st-brk">ブレイク済 ${fmtJst(x.brokeT).split(' ')[1]}</span>` : '<span class="st-wait">待機中</span>';
+        const dv = (sell ? x.price - x.mark : x.mark - x.price) * mul;   // 正：まだブレイクしていない側
+        dist = (unit === 'pips' ? dv.toFixed(1) : Math.round(dv)) + unit;
+      }
+      html += `<tr data-sym="${esc(sym.key)}"><th>${esc(sym.name)}</th><td class="${sell ? 'dn' : 'up'}">${sell ? '売り' : '買い'}</td><td>${mark}</td><td>${state}</td><td>${dist}</td><td class="st-why">${r.reasons.map(esc).join('<br>')}</td></tr>`;
+    }
+    $('scanSetup').innerHTML = html + '</tbody></table>';
+  },
   render(){
     if (!this.on) return;
+    this.renderSetups();
     let syms = G.symbols.slice();
     const hits = s => this.tfs.filter(tf=>((this.results[s.key] || {})[tf] || {}).contact).length;
     if (this.onlyContact) syms = syms.filter(s=>hits(s) > 0);
@@ -2529,6 +2686,7 @@ function wireScan(){
   $('scanDiv').onchange = ()=>{ Scanner.onlyDiv = $('scanDiv').checked; Scanner.save(); Scanner.render(); };
   $('scanSort').onchange = ()=>{ Scanner.sortContact = $('scanSort').checked; Scanner.save(); Scanner.render(); };
   $('scanInt').onchange = ()=>{ Scanner.interval = +$('scanInt').value; Scanner.save(); Scanner.paintStatus(); Scanner.schedule(); };
+  $('scanSetup').onclick = e=>{ const tr = e.target.closest('tr[data-sym]'); if (tr) Scanner.openChart(tr.dataset.sym, 'M1'); };
   $('scanTable').onclick = e=>{ const td = e.target.closest('td[data-sym]'); if (td) Scanner.openChart(td.dataset.sym, td.dataset.tf); };
   window.addEventListener('hashchange', ()=>{ if (location.hash === '#scan') Scanner.open(); else Scanner.close(); });
   document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible' && Scanner.on){ Scanner.seq++; Scanner.loading = false; Scanner.refresh(false); } });
