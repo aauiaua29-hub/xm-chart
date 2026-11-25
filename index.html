@@ -125,6 +125,23 @@
   .sc-legend{padding:6px 10px 10px;margin:0}
   #scanTable .dv{font-size:11px;margin-top:2px;font-weight:600} .dvu{color:#26c6da} .dvd{color:#ef5350} .dvp{opacity:.75;font-weight:400} #scanSummary b.dvc{color:#b9a8ff}
   @media (max-width:640px){ #scanBtn .txt{display:none} #scanTable th,#scanTable td{padding:7px 5px;font-size:12px} }
+  /* スマホ・低い画面：一覧ページ全体を1枚でスクロール（表が押しつぶされないように） */
+  @media (max-width:820px), (max-height:700px){
+    #scan{display:block;overflow:auto;-webkit-overflow-scrolling:touch}
+    #scanSetup{max-height:none;overflow-x:auto}
+    #scanTable{overflow:visible;padding:0 4px 8px}
+    #scanTable table{min-width:0}
+  }
+  /* スマホ：セットアップは1件ずつのカード表示 */
+  @media (max-width:640px){
+    #scanSetup thead{display:none}
+    #scanSetup table,#scanSetup tbody{display:block;min-width:0}
+    #scanSetup tbody tr{display:block;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin:0 0 8px}
+    #scanSetup th,#scanSetup td{display:block;border:0;padding:2px 0;white-space:normal}
+    #scanSetup tbody th{font-size:15px}
+    #scanSetup td[data-l]::before{content:attr(data-l) '：';color:var(--muted);font-weight:400;font-size:12px}
+    #scanSetup .st-why{min-width:0;margin-top:2px}
+  }
   /* リプレイ */
   #rpBar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;background:#1a1530;border-top:1px solid #4b3c8a}
   #rpBar .rplbl{font-size:11px;color:#b9a8ff;border:1px solid #4b3c8a;border-radius:4px;padding:1px 5px}
@@ -439,7 +456,7 @@ function gkLaneDefaults(tf){
 const GK_DEFAULTS = {
   lanes:[gkLaneDefaults('CUR'), gkLaneDefaults('H1'), gkLaneDefaults('H4')],
   panel:true, watermark:true, toast:true, swingLabels:true, swingHistory:true, divLines:true, mtfDivPts:true, mtfDivTfs:{M5:true, M15:true, M30:true, H1:true, H4:true, D1:true}, setupMarks:true, dowSigns:true,
-  pivotMode:'zigzag', stPeriod:20, stMult:1, stLine:true,   // SH/SLの判定方式（全時間足・全銘柄共通）
+  pivotMode:'zigzag', stPeriod:20, stMult:1, stLine:true, zoneCloseInv:false,   // SH/SLの判定方式（全時間足・全銘柄共通）
 };
 let GKS = null;   // 設定（端末ごとに保存）
 function gkSettings(){
@@ -1344,6 +1361,7 @@ class GKEngine {
             }
           }
           let wasInvalidated = false;
+          const closeInv = !!gkSettings().zoneCloseInv;   // 追加オプション：終値でZONEを抜けたら無効（元コードにはない）
           {
             let loop32start =I(0);
             let loop32step =(loop32start <= I(firstTouchIndex)) ? 1 : -1;
@@ -1354,6 +1372,10 @@ class GKEngine {
                 break;
               }
               if(((isDown && PGt(this.GethArr(I(kk)), top)) && PGt(this.GetlArr(I(kk)), top))) {
+                wasInvalidated = true;
+                break;
+              }
+              if(closeInv && ((isUP && PLt(this.GetcArr(I(kk)), bottom)) || (isDown && PGt(this.GetcArr(I(kk)), top)))) {
                 wasInvalidated = true;
                 break;
               }
@@ -2293,6 +2315,13 @@ function gkBuildSettings(box, onChange){
     ? 'SuperTrendが上昇の区間の最高値＝SH、下降の区間の最安値＝SL。反対に転換した足が確定した時点で登録します。'
     : '前後3本で一番高い（安い）足を候補とし、反対側の候補が出た時点で登録します（元コードどおり）。';
   fp.append(rp, pn); wrap.appendChild(fp);
+  // ZONEの無効化ルール（全時間足・全銘柄共通）
+  const fz = document.createElement('fieldset'); fz.innerHTML = '<legend>ZONEの無効化（全時間足・全銘柄共通）</legend>';
+  const rz = document.createElement('div'); rz.className = 'gkrow';
+  rz.append(chk(S, 'zoneCloseInv', '終値でZONEを抜けたら無効にする'));
+  const zn = document.createElement('p'); zn.className = 'note'; zn.style.margin = '6px 0 0';
+  zn.textContent = 'オフ（元のGK_ZONE）：足全体（ヒゲも含む）がZONEの外に出た確定足があれば無効。オン：それに加えて、確定足の終値がZONEの外側（上昇ZONEは下端より下、下降ZONEは上端より上）なら無効。形成中の足では無効にしません。';
+  fz.append(rz, zn); wrap.appendChild(fz);
   const fd = document.createElement('fieldset'); fd.innerHTML = '<legend>表示</legend>';
   const r6 = document.createElement('div'); r6.className = 'gkrow';
   r6.append(chk(S,'panel','情報パネル'), chk(S,'watermark','背景文字'), chk(S,'toast','画面内アラート'),
@@ -2632,7 +2661,7 @@ const Scanner = {
     const wait = rows.filter(r=>r.x.status === 'OK' && !r.x.brokeT).length;
     let html = `<div class="st-head">セットアップ <b>${rows.length}</b> 件（待機中 ${wait}）<span class="note">　1H/4HのZONEに接触中 × 5m/15mで同じ向きのダイバージェンス → 1mのマーク（終値でブレイク）</span></div>`;
     if (!rows.length){ $('scanSetup').innerHTML = html + '<div class="st-empty">該当なし</div>'; return; }
-    html += '<table><thead><tr><th>銘柄</th><th>方向</th><th>1mマーク</th><th>状態</th><th>現在値まで</th><th>根拠</th></tr></thead><tbody>';
+    html += '<table><thead><tr><th>銘柄・方向</th><th>1mマーク</th><th>状態</th><th>現在値まで</th><th>根拠</th></tr></thead><tbody>';
     rows.sort((a, b)=>(!!a.x.brokeT - !!b.x.brokeT) || a.sym.order - b.sym.order);
     for (const r of rows){
       const x = r.x, sym = r.sym, dg = sym.digits, sell = x.dir === -1;
@@ -2644,7 +2673,7 @@ const Scanner = {
         const dv = (sell ? x.price - x.mark : x.mark - x.price) * mul;   // 正：まだブレイクしていない側
         dist = (unit === 'pips' ? dv.toFixed(1) : Math.round(dv)) + unit;
       }
-      html += `<tr data-sym="${esc(sym.key)}"><th>${esc(sym.name)}</th><td class="${sell ? 'dn' : 'up'}">${sell ? '売り' : '買い'}</td><td>${mark}</td><td>${state}</td><td>${dist}</td><td class="st-why">${r.reasons.map(esc).join('<br>')}</td></tr>`;
+      html += `<tr data-sym="${esc(sym.key)}"><th>${esc(sym.name)}　<span class="${sell ? 'dn' : 'up'}">${sell ? '売り' : '買い'}</span></th><td data-l="1mマーク">${mark}</td><td data-l="状態">${state}</td><td data-l="現在値まで">${dist}</td><td class="st-why">${r.reasons.map(esc).join('<br>')}</td></tr>`;
     }
     $('scanSetup').innerHTML = html + '</tbody></table>';
   },
