@@ -278,6 +278,8 @@
 <!-- Googleログイン（保有ポジションの表示に使用） -->
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+<!-- Googleログイン用の設定（同じ場所の firebase-config.js。無くても動きます） -->
+<script src="firebase-config.js"></script>
 <script>
 'use strict';
 
@@ -467,7 +469,7 @@ function gkSettings(){
   GKS.mtfDivTfs = Object.assign({}, GK_DEFAULTS.mtfDivTfs, saved.mtfDivTfs || {});
   return GKS;
 }
-function gkSave(){ store.set('gk', GKS); }
+function gkSave(){ store.set('gk', GKS); if (typeof GkSync !== 'undefined') GkSync.push(); }   // ログイン中は通知用にも保存
 function gkTFText(min){
   if (min === 1440) return '1D'; if (min === 10080) return '1W';
   if (min >= 60 && min % 60 === 0) return (min/60) + 'H';
@@ -2322,6 +2324,13 @@ function gkBuildSettings(box, onChange){
   const zn = document.createElement('p'); zn.className = 'note'; zn.style.margin = '6px 0 0';
   zn.textContent = 'オフ（元のGK_ZONE）：足全体（ヒゲも含む）がZONEの外に出た確定足があれば無効。オン：それに加えて、確定足の終値がZONEの外側（上昇ZONEは下端より下、下降ZONEは上端より上）なら無効。形成中の足では無効にしません。';
   fz.append(rz, zn); wrap.appendChild(fz);
+  // VPSの通知（Discord）との連動
+  const fy = document.createElement('fieldset'); fy.innerHTML = '<legend>Discord通知との連動</legend>';
+  const yn = document.createElement('p'); yn.className = 'note'; yn.id = 'gkSyncState'; yn.style.margin = '0'; yn.style.userSelect = 'all';
+  const yn2 = document.createElement('p'); yn2.className = 'note'; yn2.style.margin = '4px 0 0';
+  yn2.textContent = '連動する設定：SH/SLの判定方式（期間・乗数）、ZONEの無効化。VPSの config.json の settingsUid に上の連動用IDを入れると、通知がこの設定で判定します。';
+  fy.append(yn, yn2); wrap.appendChild(fy);
+  if (typeof GkSync !== 'undefined') GkSync.paint();
   const fd = document.createElement('fieldset'); fd.innerHTML = '<legend>表示</legend>';
   const r6 = document.createElement('div'); r6.className = 'gkrow';
   r6.append(chk(S,'panel','情報パネル'), chk(S,'watermark','背景文字'), chk(S,'toast','画面内アラート'),
@@ -2727,20 +2736,22 @@ function wireScan(){
  *  ・Googleでログインした本人だけが読める場所（/pos/ユーザーID）をEAが更新する
  *  ・ここはその場所を読み取り、表示中の銘柄のポジションにラインを引くだけ（発注・決済はしない）
  * ===================================================================== */
-// ↓ Firebaseの「ウェブアプリ」の設定を貼り付けます（公開して問題ない値です）
-const FIREBASE_CONFIG = null;
-// 例：{ apiKey:'AIza…', authDomain:'xm-chart.firebaseapp.com', databaseURL:'https://xm-chart-default-rtdb.asia-southeast1.firebasedatabase.app', projectId:'xm-chart', appId:'1:…' }
+// Firebaseの「ウェブアプリ」の設定（公開して問題ない値）は、index.html と同じ場所の firebase-config.js に書きます。
+// index.html を新しい版に差し替えても消えないよう、別のファイルにしています。
+// firebase-config.js の中身の例：
+//   window.XM_FIREBASE_CONFIG = { apiKey:'AIza…', authDomain:'xm-chart.firebaseapp.com', databaseURL:'https://…firebasedatabase.app', projectId:'xm-chart', appId:'1:…' };
+const FIREBASE_CONFIG = window.XM_FIREBASE_CONFIG || null;
 
 const Pos = {
   ready:false, user:null, es:null, data:{}, timer:null, msg:'', seq:0,
   init(){
-    if (!FIREBASE_CONFIG){ this.msg = '未設定（index.html の FIREBASE_CONFIG にFirebaseの設定を入れると使えます）'; paintPos(); return; }
+    if (!FIREBASE_CONFIG){ this.msg = '未設定（firebase-config.js にFirebaseの設定を入れると使えます）'; paintPos(); GkSync.paint(); return; }
     if (typeof firebase === 'undefined'){ this.msg = 'ログイン機能を読み込めませんでした'; paintPos(); return; }
     try{
       if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
       this.ready = true;
       firebase.auth().getRedirectResult().catch(e=>{ this.msg = 'ログインに失敗しました：' + e.message; paintPos(); });
-      firebase.auth().onAuthStateChanged(u=>{ this.user = u; this.msg = ''; paintPos(); this.connect(); });
+      firebase.auth().onAuthStateChanged(u=>{ this.user = u; this.msg = ''; paintPos(); this.connect(); GkSync.onLogin(); });
     }catch(e){ this.msg = '初期化に失敗しました：' + e.message; }
     paintPos();
   },
@@ -2803,6 +2814,69 @@ const Pos = {
     add('1003', 'GOLD', 1, 0.01, +(g - 3).toFixed(2), 0, +(g + 12).toFixed(2));
     return out;
   },
+};
+
+/* =====================================================================
+ *  判定の設定（SH/SLの判定方式・ZONEの無効化）を Firebase に保存し、VPSの通知と連動させる
+ *  ---------------------------------------------------------------------
+ *  ・ログイン中に設定を変えると /gksettings/ユーザーID に保存（本人だけが書ける）
+ *  ・VPSの notifier.js は config.json の settingsUid の場所を読み、同じ設定で判定する
+ *  ・ログインしたとき保存済みの設定があれば、それをこの端末にも反映（PC・スマホでもそろう）
+ * ===================================================================== */
+const GK_SYNC_KEYS = ['pivotMode', 'stPeriod', 'stMult', 'zoneCloseInv'];
+const GkSync = {
+  last:null, state:'', at:0,
+  pick(S){ const o = {}; for (const k of GK_SYNC_KEYS) o[k] = S[k]; return o; },
+  url(q){ return Firebase.url(`/gksettings/${Pos.user.uid}`, q); },
+  async onLogin(){
+    this.last = null;
+    if (G.demo || !Pos.user || !G.db){ this.state = ''; this.paint(); return; }
+    try{
+      const t = await Pos.user.getIdToken();
+      const r = await fetch(this.url('auth=' + encodeURIComponent(t)), {cache:'no-store'});
+      if (r.status === 401){ this.state = 'rules'; this.paint(); return; }
+      const remote = r.ok ? await r.json() : null;
+      if (remote && remote.pivotMode){
+        const S = gkSettings(); let changed = false;
+        for (const k of GK_SYNC_KEYS) if (k in remote && remote[k] !== S[k]){ S[k] = remote[k]; changed = true; }
+        this.last = JSON.stringify(this.pick(S)); this.state = 'ok'; this.at = Date.now();
+        if (changed){
+          store.set('gk', S);
+          if (typeof refreshIndicators === 'function') refreshIndicators();
+          if (typeof buildIndList === 'function' && !$('indModal').classList.contains('hidden')) buildIndList();
+          this.state = 'pulled';
+        }
+        this.paint(); return;
+      }
+      await this.push(true);
+    }catch(e){ this.state = 'err:' + e.message; this.paint(); }
+  },
+  async push(force){
+    if (G.demo || !Pos.user || !G.db) return;
+    const body = this.pick(gkSettings()), js = JSON.stringify(body);
+    if (!force && js === this.last) return;
+    this.last = js;
+    try{
+      const t = await Pos.user.getIdToken();
+      const r = await fetch(this.url('auth=' + encodeURIComponent(t)), {method:'PUT', body:JSON.stringify(Object.assign({updated:{'.sv':'timestamp'}}, body))});
+      this.state = r.ok ? 'ok' : r.status === 401 ? 'rules' : 'err:HTTP ' + r.status; this.at = Date.now();
+      if (!r.ok) this.last = null;
+    }catch(e){ this.state = 'err:' + e.message; this.last = null; }
+    this.paint();
+  },
+  text(){
+    if (G.demo) return 'デモ表示中は連動しません。';
+    if (!FIREBASE_CONFIG) return '未設定：Googleログインの準備（firebase-config.js）をすると、VPSの通知と設定を連動できます。';
+    if (!Pos.user) return '未ログイン：⚙ の「保有ポジション」欄から Google でログインすると、ここの設定がVPSの通知にも反映されます。';
+    const id = `連動用ID：${Pos.user.uid}`;
+    if (this.state === 'rules') return `保存できません：Firebaseのルールに gksettings を追加してください。　${id}`;
+    if (this.state.startsWith('err:')) return `保存に失敗しました（${this.state.slice(4)}）。　${id}`;
+    const tm = this.at ? new Date(this.at).toTimeString().slice(0, 5) : '';
+    if (this.state === 'pulled') return `保存済みの設定をこの端末に反映しました（${tm}）。　${id}`;
+    if (this.state === 'ok') return `連動中：設定を変えると通知にも反映されます（最終保存 ${tm}）。　${id}`;
+    return `連動の準備中…　${id}`;
+  },
+  paint(){ const el = document.getElementById('gkSyncState'); if (el) el.textContent = this.text(); },
 };
 
 function paintPos(){
