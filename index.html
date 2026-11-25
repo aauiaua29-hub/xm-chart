@@ -2152,6 +2152,7 @@ function gkLaneCompute(bars, tf){
     let hi = v.alertyasune; for (let n = 0; n < v.alertyasuneindex; n++) if (PLt(hi, e.CH(n))) hi = e.CH(n);
     v.alertedS = PLe(v.Zonebottom, hi);
   }
+  e.srcBars = bars;   // セットアップ判定で、2点目より後の値動きを見るため
   e.candle = {h:last.h, l:last.l, t:last.t};
   e.contact = hasZone && PLe(last.l, v.Zonetop) && PGe(last.h, v.Zonebottom);
   e.touches = hasZone ? e.touchCount(last) : 0;
@@ -2171,11 +2172,21 @@ function gkSetupFind(lanes){
     const dir = z.st.trendDirection; if (dir !== 1 && dir !== -1) continue;
     for (const dtf of GK_SETUP_DIV_TFS){
       const e = lanes[dtf]; if (!e || !e.ready) continue;
-      for (const d of (e.div || []).concat(e.divP || [])) if (d.bull === (dir === 1))
+      for (const d of (e.div || []).concat(e.divP || [])){
+        if (d.bull !== (dir === 1)) continue;
+        // 2点目のあとに価格が2点目を超えていたら（売りなら高値更新、買いなら安値更新）、そのDivは終わったものとして使わない
+        if (gkDivExceeded(e.srcBars, d)) continue;
         out.push({ztf, dir, zt:z.st.Zonetop, zb:z.st.Zonebottom, touches:z.touches, dtf, d});
+      }
     }
   }
   return out;
+}
+function gkDivExceeded(bars, d){
+  if (!bars || !bars.length) return false;
+  for (let i = bars.length - 1; i >= 0 && bars[i].t > d.t2; i--)
+    if (d.bull ? bars[i].l < d.p2 : bars[i].h > d.p2) return true;
+  return false;
 }
 // 1mのマーク価格。売り：2点目の高値を付けた1mの足で、その足が確定した時点の1mの押し安値。
 // 1mが上昇トレンドでない（押し安値がない）ときは、その高値より前で直近の1mのSL。買いは上下を逆に。
