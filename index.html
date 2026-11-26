@@ -101,15 +101,30 @@
   .sc-tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px;border-bottom:1px solid var(--line);background:var(--panel)}
   .sc-tools .seg button{padding:4px 8px;font-size:12px}
   #scanSetup{padding:6px 10px 2px;border-bottom:1px solid var(--line);max-height:45vh;overflow:auto}
+  #scanZd{padding:6px 10px 2px;border-bottom:1px solid var(--line);max-height:45vh;overflow:auto}
   #scanSetup .st-head{font-size:13px;color:var(--muted);margin-bottom:4px} #scanSetup .st-head b{color:var(--warn);font-size:15px}
+  #scanZd .st-head{font-size:13px;color:var(--muted);margin-bottom:4px} #scanZd .st-head b{color:var(--warn);font-size:15px}
   #scanSetup .st-empty{font-size:12px;color:var(--muted);padding:2px 0 6px}
+  #scanZd .st-empty{font-size:12px;color:var(--muted);padding:2px 0 6px}
   #scanSetup table{border-collapse:collapse;font-size:13px;min-width:100%}
+  #scanZd table{border-collapse:collapse;font-size:13px;min-width:100%}
   #scanSetup th,#scanSetup td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:left;vertical-align:top}
+  #scanZd th,#scanZd td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:left;vertical-align:top}
   #scanSetup thead th{color:var(--muted);font-weight:600;font-size:12px}
+  #scanZd thead th{color:var(--muted);font-weight:600;font-size:12px}
   #scanSetup tbody tr{cursor:pointer} #scanSetup tbody tr:hover{background:rgba(255,255,255,.04)}
+  #scanZd tbody tr{cursor:pointer} #scanZd tbody tr:hover{background:rgba(255,255,255,.04)}
   #scanSetup .up{color:#66bb6a;font-weight:700} #scanSetup .dn{color:#ffa726;font-weight:700}
+  #scanZd .up{color:#66bb6a;font-weight:700} #scanZd .dn{color:#ffa726;font-weight:700}
   #scanSetup .st-wait{color:#ffd54f;font-weight:700} #scanSetup .st-brk{color:#9aa0a6}
+  #scanZd .st-wait{color:#ffd54f;font-weight:700} #scanZd .st-brk{color:#9aa0a6}
   #scanSetup .st-why{font-size:12px;color:#c9ced6;white-space:normal;min-width:220px}
+  .st-head{cursor:pointer;user-select:none} .st-head .fold{display:inline-block;width:14px;color:var(--muted)}
+  .zd-chip{display:inline-block;padding:3px 8px;margin:2px 4px 2px 0;border-radius:6px;border:1px solid var(--line);font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .zd-chip.bull{color:#4dd0e1;border-color:rgba(77,208,225,.5);background:rgba(77,208,225,.08)}
+  .zd-chip.bear{color:#ff6b6b;border-color:rgba(255,107,107,.5);background:rgba(255,107,107,.08)}
+  .zd-chip:hover{filter:brightness(1.3)}
+  #scanZd .st-why{font-size:12px;color:#c9ced6;white-space:normal;min-width:220px}
   #scanSummary{padding:6px 10px;font-size:13px;color:var(--muted)} #scanSummary b{color:var(--warn);font-size:15px}
   #scanTable{flex:1;overflow:auto;padding:0 6px}
   #scanTable table{border-collapse:separate;border-spacing:0;font-size:13px;min-width:100%}
@@ -129,18 +144,26 @@
   @media (max-width:820px), (max-height:700px){
     #scan{display:block;overflow:auto;-webkit-overflow-scrolling:touch}
     #scanSetup{max-height:none;overflow-x:auto}
+    #scanZd{max-height:none;overflow-x:auto}
     #scanTable{overflow:visible;padding:0 4px 8px}
     #scanTable table{min-width:0}
   }
   /* スマホ：セットアップは1件ずつのカード表示 */
   @media (max-width:640px){
     #scanSetup thead{display:none}
+    #scanZd thead{display:none}
     #scanSetup table,#scanSetup tbody{display:block;min-width:0}
+    #scanZd table,#scanZd tbody{display:block;min-width:0}
     #scanSetup tbody tr{display:block;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin:0 0 8px}
+    #scanZd tbody tr{display:block;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin:0 0 8px}
     #scanSetup th,#scanSetup td{display:block;border:0;padding:2px 0;white-space:normal}
+    #scanZd th,#scanZd td{display:block;border:0;padding:2px 0;white-space:normal}
     #scanSetup tbody th{font-size:15px}
+    #scanZd tbody th{font-size:15px}
     #scanSetup td[data-l]::before{content:attr(data-l) '：';color:var(--muted);font-weight:400;font-size:12px}
+    #scanZd td[data-l]::before{content:attr(data-l) '：';color:var(--muted);font-weight:400;font-size:12px}
     #scanSetup .st-why{min-width:0;margin-top:2px}
+    #scanZd .st-why{min-width:0;margin-top:2px}
   }
   /* リプレイ */
   #rpBar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;background:#1a1530;border-top:1px solid #4b3c8a}
@@ -213,6 +236,7 @@
       <span id="scanStatus" class="note"></span>
     </div>
     <div id="scanSetup"></div>
+    <div id="scanZd"></div>
     <div id="scanSummary"></div>
     <div id="scanTable"></div>
     <p class="note sc-legend">▲上昇 ▼下降　なし＝ZONEなし　数字＝現在値からZONEまでの距離（pips。↓はZONEが下、↑は上）　接触中＝その時間足の現在のローソク足がZONEにかかっている（初・2・3…＝このZONEへの何回目の接触か）　↑↑↑/↓↓↓＝直近の高値（安値）のあとZONEまで戻った　R_Div/H_Div＝レギュラー/ヒドゥン・ダイバージェンス（RSI14、直近2つのSH同士・SL同士。▲強気 ▼弱気。(暫定)＝まだ確定していない今の安値・高値で判定、更新で変わる）　マスをタップするとチャートを開きます</p>
@@ -2615,6 +2639,7 @@ function gkScanCompute(bars, tf){
           contact:x.contact, reached: dir === 1 ? v.alertedL : dir === -1 ? v.alertedS : false,
           price:bars[bars.length-1].c, touches:x.touches, div:(x.div || []).concat(x.divP || []), lane:x};
 }
+const GK_ZD_TFS = ['D1','H4','H1','M30','M15'];   // ZONE接触×同方向Div の対象（上位→下位）
 const Scanner = {
   on:false, loading:false, timer:null, lastUpdate:null, seq:0,
   tfs: null, onlyContact:false, sortContact:false, interval:30,
@@ -2653,7 +2678,7 @@ const Scanner = {
     const seq = ++this.seq; this.loading = true; this.paintStatus('更新中…');
     const syms = G.symbols, jobs = [];
     // 表示する時間足＋セットアップ判定に使う時間足（1H・4H・5m・15m）。1mはセットアップ候補の銘柄だけ
-    const tfs = TIMEFRAMES.filter(tf=>this.tfs.includes(tf) || GK_SETUP_LANE_TFS.includes(tf));
+    const tfs = TIMEFRAMES.filter(tf=>this.tfs.includes(tf) || GK_SETUP_LANE_TFS.includes(tf) || GK_ZD_TFS.includes(tf));
     for (const s of syms) jobs.push(async ()=>{
       let live = {};
       try{ live = await this.liveSnapshot(s.key, tfs.concat(this.setups[s.key] ? ['M1'] : [])); }catch(e){}
@@ -2742,7 +2767,9 @@ const Scanner = {
       for (const g of grp.values()) rows.push({sym:s, ...g});
     }
     const wait = rows.filter(r=>r.x.status === 'OK' && !r.x.brokeT).length;
-    let html = `<div class="st-head">セットアップ <b>${rows.length}</b> 件（待機中 ${wait}）<span class="note">　1H/4HのZONEに接触中 × 5m/15mで同じ向きのダイバージェンス → 1mのマーク（終値でブレイク）</span></div>`;
+    const open = store.get('scanSetupOpen', true);
+    let html = `<div class="st-head" data-fold="scanSetupOpen"><span class="fold">${open ? '▼' : '▶'}</span>セットアップ <b>${rows.length}</b> 件（待機中 ${wait}）<span class="note">　1H/4HのZONEに接触中 × 5m/15mで同じ向きのダイバージェンス → 1mのマーク（終値でブレイク）</span></div>`;
+    if (!open){ $('scanSetup').innerHTML = html; return; }
     if (!rows.length){ $('scanSetup').innerHTML = html + '<div class="st-empty">該当なし</div>'; return; }
     html += '<table><thead><tr><th>銘柄・方向</th><th>1mマーク</th><th>状態</th><th>現在値まで</th><th>根拠</th></tr></thead><tbody>';
     rows.sort((a, b)=>(!!a.x.brokeT - !!b.x.brokeT) || a.sym.order - b.sym.order);
@@ -2760,9 +2787,41 @@ const Scanner = {
     }
     $('scanSetup').innerHTML = html + '</tbody></table>';
   },
+  // ZONE接触中 × 同方向Div：ZONEの時間足から15分足までの、同じ向きのダイバージェンスが出ている時間足
+  renderZoneDiv(){
+    const rows = [];
+    for (const s of G.symbols){
+      const R = this.results[s.key]; if (!R) continue;
+      GK_ZD_TFS.forEach((ztf, zi)=>{
+        const z = R[ztf]; if (!z || !z.ok || !z.contact || !z.lane) return;
+        const dir = z.lane.st.trendDirection; if (dir !== 1 && dir !== -1) return;
+        const hits = [];
+        for (const dtf of GK_ZD_TFS.slice(zi)){
+          const r = R[dtf]; if (!r || !r.ok || !r.lane) continue;
+          for (const d of (r.lane.div || []).concat(r.lane.divP || []))
+            if (d.bull === (dir === 1) && !gkDivExceeded(r.lane.srcBars, d)) hits.push({tf:dtf, d});
+        }
+        if (hits.length) rows.push({sym:s, ztf, zi, dir, touches:z.touches, hits});
+      });
+    }
+    const open = store.get('scanZdOpen', true);
+    let html = `<div class="st-head" data-fold="scanZdOpen"><span class="fold">${open ? '▼' : '▶'}</span>ZONE接触×同方向Div <b>${rows.length}</b> 件<span class="note">　D1/H4/H1/M30/M15のZONEに接触中で、その時間足〜15分足に同じ向きのダイバージェンス（2点目を超えたものは除く）。時間足をタップするとチャートを開きます</span></div>`;
+    if (!open){ $('scanZd').innerHTML = html; return; }
+    if (!rows.length){ $('scanZd').innerHTML = html + '<div class="st-empty">該当なし</div>'; return; }
+    rows.sort((a, b)=>a.zi - b.zi || a.sym.order - b.sym.order);
+    html += '<table><thead><tr><th>銘柄・方向</th><th>ZONE</th><th>ダイバージェンスの時間足</th></tr></thead><tbody>';
+    for (const r of rows){
+      const up = r.dir === 1, cls = up ? 'bull' : 'bear';
+      const chips = r.hits.map(h=>`<span class="zd-chip ${cls}" data-sym="${esc(r.sym.key)}" data-tf="${h.tf}">${gkTFText(TF_SEC[h.tf] / 60)} ${esc(gkDivLabel(h.d))}</span>`).join('');
+      html += `<tr data-sym="${esc(r.sym.key)}" data-tf="${r.ztf}"><th>${esc(r.sym.name)}　<span class="${up ? 'up' : 'dn'}">${up ? '買い' : '売り'}</span></th>` +
+        `<td data-l="ZONE">${gkTFText(TF_SEC[r.ztf] / 60)}${up ? '↑' : '↓'}接触中(${gkTouchLabel(r.touches)})</td><td class="st-why">${chips}</td></tr>`;
+    }
+    $('scanZd').innerHTML = html + '</tbody></table>';
+  },
   render(){
     if (!this.on) return;
     this.renderSetups();
+    this.renderZoneDiv();
     let syms = G.symbols.slice();
     const hits = s => this.tfs.filter(tf=>((this.results[s.key] || {})[tf] || {}).contact).length;
     if (this.onlyContact) syms = syms.filter(s=>hits(s) > 0);
@@ -2798,7 +2857,14 @@ function wireScan(){
   $('scanDiv').onchange = ()=>{ Scanner.onlyDiv = $('scanDiv').checked; Scanner.save(); Scanner.render(); };
   $('scanSort').onchange = ()=>{ Scanner.sortContact = $('scanSort').checked; Scanner.save(); Scanner.render(); };
   $('scanInt').onchange = ()=>{ Scanner.interval = +$('scanInt').value; Scanner.save(); Scanner.paintStatus(); Scanner.schedule(); };
-  $('scanSetup').onclick = e=>{ const tr = e.target.closest('tr[data-sym]'); if (tr) Scanner.openChart(tr.dataset.sym, 'M1'); };
+  // 見出しをタップで折りたたみ
+  const fold = e=>{ const h = e.target.closest('.st-head[data-fold]'); if (!h) return false; store.set(h.dataset.fold, !store.get(h.dataset.fold, true)); Scanner.renderSetups(); Scanner.renderZoneDiv(); return true; };
+  $('scanSetup').onclick = e=>{ if (fold(e)) return; const tr = e.target.closest('tr[data-sym]'); if (tr) Scanner.openChart(tr.dataset.sym, 'M1'); };
+  $('scanZd').onclick = e=>{
+    if (fold(e)) return;
+    const c = e.target.closest('.zd-chip'); if (c){ Scanner.openChart(c.dataset.sym, c.dataset.tf); return; }
+    const tr = e.target.closest('tr[data-sym]'); if (tr) Scanner.openChart(tr.dataset.sym, tr.dataset.tf);
+  };
   $('scanTable').onclick = e=>{ const td = e.target.closest('td[data-sym]'); if (td) Scanner.openChart(td.dataset.sym, td.dataset.tf); };
   window.addEventListener('hashchange', ()=>{ if (location.hash === '#scan') Scanner.open(); else Scanner.close(); });
   document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible' && Scanner.on){ Scanner.seq++; Scanner.loading = false; Scanner.refresh(false); } });
