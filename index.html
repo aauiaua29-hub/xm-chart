@@ -342,6 +342,24 @@ const TA = {
     const dn = TA.rma(ch.map(v=> v==null?null:-Math.min(v,0)), n);
     return up.map((u,i)=> u==null||dn[i]==null ? null : dn[i]===0 ? 100 : u===0 ? 0 : 100 - 100/(1+u/dn[i]));
   },
+  // RCI（順位相関指数）：日付の順位（新しい足＝1）と価格の順位（高い＝1。同値は平均順位）の相関を％で。上昇が続くと＋100
+  rci(src, n){
+    const out = new Array(src.length).fill(null), den = n * (n * n - 1);
+    for (let i = n - 1; i < src.length; i++){
+      const w = []; let ok = true;
+      for (let k = 0; k < n; k++){ const v = src[i - k]; if (v == null){ ok = false; break; } w.push({v, tr:k + 1}); }
+      if (!ok) continue;
+      const sorted = w.slice().sort((a, b)=>b.v - a.v);
+      for (let a = 0; a < n; ){
+        let b = a; while (b + 1 < n && sorted[b + 1].v === sorted[a].v) b++;
+        const r = (a + b) / 2 + 1; for (let k = a; k <= b; k++) sorted[k].pr = r;
+        a = b + 1;
+      }
+      let d2 = 0; for (const x of w) d2 += (x.tr - x.pr) ** 2;
+      out[i] = (1 - 6 * d2 / den) * 100;
+    }
+    return out;
+  },
   highest(src, n){ return src.map((_,i)=> i<n-1 ? null : Math.max(...src.slice(i-n+1,i+1))); },
   lowest (src, n){ return src.map((_,i)=> i<n-1 ? null : Math.min(...src.slice(i-n+1,i+1))); },
   crossover (a, b, i){ return i>0 && a[i]!=null && b[i]!=null && a[i-1]!=null && b[i-1]!=null && a[i] > b[i] && a[i-1] <= b[i-1]; },
@@ -398,6 +416,41 @@ const INDICATORS = [
     params:[ {key:'n', label:'期間', value:14} ],
     compute(bars, p, TA){
       return { lines:[ {key:'r', name:`RSI${p.n}`, color:'#af7ac5', values:TA.rsi(bars.map(b=>b.c), +p.n), precision:2} ]};
+    }
+  },
+
+  {
+    // 3本のEMAがパーフェクトオーダーのとき、RCIが行き過ぎ（±70）から反転したらサイン
+    id:'rcipo', name:'RCI×パーフェクトオーダー（L/Sサイン）', pane:'sub', defaultOn:true,
+    levels:p=>[+p.hi, +p.lo],
+    params:[
+      {key:'n',  label:'RCI期間', value:9},
+      {key:'e1', label:'EMA短期', value:20},
+      {key:'e2', label:'EMA中期', value:30},
+      {key:'e3', label:'EMA長期', value:40},
+      {key:'lo', label:'Lの基準（以下）', value:-70},
+      {key:'hi', label:'Sの基準（以上）', value:70},
+    ],
+    // L：EMA短期＞中期＞長期 のとき、1本前のRCIが基準以下の谷（その前の足以下）で、この足で上向き（確定足のみ）
+    // S：EMA短期＜中期＜長期 のとき、1本前のRCIが基準以上の山で、この足で下向き
+    compute(bars, p, TA){
+      const c = bars.map(b=>b.c), n = bars.length;
+      const e1 = TA.ema(c, +p.e1), e2 = TA.ema(c, +p.e2), e3 = TA.ema(c, +p.e3), r = TA.rci(c, +p.n);
+      const markers = [];
+      for (let j = 2; j < n - 1; j++){          // 形成中の足（最後の1本）では出さない
+        const a = r[j-2], b = r[j-1], x = r[j];
+        if (a == null || b == null || x == null || e3[j] == null) continue;
+        if (e1[j] > e2[j] && e2[j] > e3[j] && b <= +p.lo && b <= a && x > b)
+          markers.push({index:j, position:'belowBar', shape:'arrowUp', color:'#26a69a', text:'L'});
+        if (e1[j] < e2[j] && e2[j] < e3[j] && b >= +p.hi && b >= a && x < b)
+          markers.push({index:j, position:'aboveBar', shape:'arrowDown', color:'#ef5350', text:'S'});
+      }
+      return { markers, lines:[
+        {key:'e1', name:`EMA${p.e1}`, color:'#ff8a65', values:e1, width:'hair', pane:'main'},
+        {key:'e2', name:`EMA${p.e2}`, color:'#ffd54f', values:e2, width:'hair', pane:'main'},
+        {key:'e3', name:`EMA${p.e3}`, color:'#4fc3f7', values:e3, width:'hair', pane:'main'},
+        {key:'r',  name:`RCI${p.n}`,  color:'#ce93d8', values:r,  width:'hair', precision:1},
+      ]};
     }
   },
 
@@ -3324,21 +3377,26 @@ class Panel {
       for (const ln of res.lines || []){
         const k = ind.id + ':' + ln.key; used.add(k);
         let s = this.indSeries[k], created = false;
+        const lp = ln.pane || ind.pane;   // 線ごとに段を変えられる（例：EMAはローソク足に、RCIは下段に）
         if (!s){
           // 下段の指標は、指標ごとに専用の段（ペイン）を作る
           let pane = 0, firstInPane = false;
-          if (ind.pane === 'sub'){
-            const sib = Object.keys(this.indSeries).find(x=>x.startsWith(ind.id + ':'));
+          if (lp === 'sub'){
+            const sib = Object.keys(this.indSeries).find(x=>x.startsWith(ind.id + ':') && this.indSeries[x].getPane().paneIndex() > 0);
             if (sib) pane = this.indSeries[sib].getPane().paneIndex();
             else { pane = this.chart.panes().length; firstInPane = true; }
           }
+          // width:'hair' ＝ 極細（画面の1ピクセル）
+          const lw = ln.width === 'hair' ? 1 / (window.devicePixelRatio || 1) : (ln.width || 2);
           s = this.chart.addSeries(LC.LineSeries, {
-            color:ln.color, lineWidth:ln.width || 2, lineStyle:ln.style || 0,
+            color:ln.color, lineWidth:lw, lineStyle:ln.style || 0,
             priceFormat: priceFormat(ln.precision ?? this.digits),
-            lastValueVisible: ind.pane === 'sub', priceLineVisible:false, crosshairMarkerVisible:false,
+            lastValueVisible: lp === 'sub', priceLineVisible:false, crosshairMarkerVisible:false,
           }, pane);
-          if (firstInPane)
-            for (const lv of ind.levels || []) s.createPriceLine({price:lv, color:'#4a5160', lineWidth:1, lineStyle:2, axisLabelVisible:false});
+          if (firstInPane){
+            const lvs = typeof ind.levels === 'function' ? ind.levels(st.p) : (ind.levels || []);
+            for (const lv of lvs) s.createPriceLine({price:+lv, color:'#4a5160', lineWidth:1, lineStyle:2, axisLabelVisible:false});
+          }
           this.indSeries[k] = s; created = true;
           if (k === 'rsi:r') s.attachPrimitive(this.rsiPrim());
         }
