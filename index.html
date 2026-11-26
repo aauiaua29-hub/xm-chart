@@ -431,21 +431,28 @@ const INDICATORS = [
       {key:'e3', label:'EMA長期', value:40},
       {key:'lo', label:'Lの基準（以下）', value:-70, signed:true},
       {key:'hi', label:'Sの基準（以上）', value:70, signed:true},
+      {key:'xl', label:'L後のEの基準（以上）', value:70, signed:true},
+      {key:'xs', label:'S後のEの基準（以下）', value:-70, signed:true},
       {key:'sub', label:'下段のRCI', value:'表示', options:['表示','非表示']},
     ],
     // L：EMA短期＞中期＞長期 のとき、1本前のRCIが基準以下の谷（その前の足以下）で、この足で上向き（確定足のみ）
     // S：EMA短期＜中期＜長期 のとき、1本前のRCIが基準以上の山で、この足で下向き
+    // E：Lのあと、RCIが「L後のEの基準」以上で確定した最初の足（Sのあとは「S後のEの基準」以下）。Eが出るか、反対のサインが出るまで1回だけ
     compute(bars, p, TA){
       const c = bars.map(b=>b.c), n = bars.length;
       const e1 = TA.ema(c, +p.e1), e2 = TA.ema(c, +p.e2), e3 = TA.ema(c, +p.e3), r = TA.rci(c, +p.n);
-      const labels = [];
+      const labels = []; let side = 0;        // 1：Lのあと、-1：Sのあと、0：なし
       for (let j = 2; j < n - 1; j++){          // 形成中の足（最後の1本）では出さない
         const a = r[j-2], b = r[j-1], x = r[j];
+        if (x != null && side === 1 && x >= +p.xl){ labels.push({index:j, position:'above', color:'#fdd835', textColor:'#1a1a1a', text:'E'}); side = 0; }
+        else if (x != null && side === -1 && x <= +p.xs){ labels.push({index:j, position:'below', color:'#fdd835', textColor:'#1a1a1a', text:'E'}); side = 0; }
         if (a == null || b == null || x == null || e3[j] == null) continue;
-        if (e1[j] > e2[j] && e2[j] > e3[j] && b <= +p.lo && b <= a && x > b)
-          labels.push({index:j, position:'below', color:'#26a69a', text:'L'});
-        if (e1[j] < e2[j] && e2[j] < e3[j] && b >= +p.hi && b >= a && x < b)
-          labels.push({index:j, position:'above', color:'#ef5350', text:'S'});
+        if (e1[j] > e2[j] && e2[j] > e3[j] && b <= +p.lo && b <= a && x > b){
+          labels.push({index:j, position:'below', color:'#26a69a', text:'L'}); side = 1;
+        }
+        if (e1[j] < e2[j] && e2[j] < e3[j] && b >= +p.hi && b >= a && x < b){
+          labels.push({index:j, position:'above', color:'#ef5350', text:'S'}); side = -1;
+        }
       }
       const lines = [
         {key:'e1', name:`EMA${p.e1}`, color:'#ff8a65', values:e1, width:'hair', pane:'main'},
@@ -3420,7 +3427,7 @@ class Panel {
       }
       for (const lb of res.labels || []){
         if (lb.index < 0 || lb.index >= n) continue;
-        labels.push({t:bars[lb.index].t, below:lb.position === 'below', text:lb.text, color:lb.color || '#888'});
+        labels.push({t:bars[lb.index].t, below:lb.position === 'below', text:lb.text, color:lb.color || '#888', textColor:lb.textColor || '#fff'});
       }
       for (const m of res.markers || []){
         if (m.index < 0 || m.index >= n) continue;
@@ -3471,11 +3478,13 @@ class Panel {
     target.useMediaCoordinateSpace(({context:ctx, mediaSize})=>{
       const fs = mediaSize.width < 420 ? 10 : 11;
       ctx.save(); ctx.font = `bold ${fs}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const stack = new Map();   // 同じ足・同じ側に複数あるときは外側へずらして並べる
       for (const lb of L){
         const i = idx.get(lb.t); if (i == null) continue;
         const x = ts.logicalToCoordinate(i); if (x == null || x < -20 || x > mediaSize.width + 20) continue;
         const b = bars[i], yb = this.candle.priceToCoordinate(lb.below ? b.l : b.h); if (yb == null) continue;
-        const w = ctx.measureText(lb.text).width + 8, h = fs + 5, gap = 17;   // SH/SLの文字の外側に置く
+        const sk = lb.t + (lb.below ? 'b' : 'a'), nth = stack.get(sk) || 0; stack.set(sk, nth + 1);
+        const w = ctx.measureText(lb.text).width + 8, h = fs + 5, gap = 17 + nth * (h + 6);   // SH/SLの文字の外側に置く
         const top = lb.below ? yb + gap : yb - gap - h;
         ctx.fillStyle = lb.color;
         ctx.beginPath();
@@ -3488,7 +3497,7 @@ class Panel {
         ctx.lineTo(l + w, top + h - r); ctx.quadraticCurveTo(l + w, top + h, l + w - r, top + h);
         ctx.lineTo(l + r, top + h); ctx.quadraticCurveTo(l, top + h, l, top + h - r);
         ctx.lineTo(l, top + r); ctx.quadraticCurveTo(l, top, l + r, top); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.fillText(lb.text, x, top + h / 2 + .5);
+        ctx.fillStyle = lb.textColor || '#fff'; ctx.fillText(lb.text, x, top + h / 2 + .5);
       }
       ctx.restore();
     });
