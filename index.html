@@ -373,6 +373,7 @@ const TA = {
  *  compute(bars, p, TA) が返すもの：
  *    lines   : [{ key, name, color, values:[…], width?:1-4, style?:0-4, precision? }]  … Pineの plot()
  *    markers : [{ index, position:'aboveBar'|'belowBar', shape:'arrowUp'|'arrowDown'|'circle'|'square', color, text }] … plotshape()
+ *    labels  : [{ index, position:'above'|'below', color, text }] … ラベル形式（色付きの札）のサイン
  *  pane    : 'main' = ローソク足に重ねる / 'sub' = 下段に表示
  *  levels  : 下段に引く水平線（例：RSIの30/70）… hline()
  *  repaint : 過去の値も変わる指標（ジグザグ等）は true にすると毎回全体を描き直します
@@ -428,29 +429,31 @@ const INDICATORS = [
       {key:'e1', label:'EMA短期', value:20},
       {key:'e2', label:'EMA中期', value:30},
       {key:'e3', label:'EMA長期', value:40},
-      {key:'lo', label:'Lの基準（以下）', value:-70},
-      {key:'hi', label:'Sの基準（以上）', value:70},
+      {key:'lo', label:'Lの基準（以下）', value:-70, signed:true},
+      {key:'hi', label:'Sの基準（以上）', value:70, signed:true},
+      {key:'sub', label:'下段のRCI', value:'表示', options:['表示','非表示']},
     ],
     // L：EMA短期＞中期＞長期 のとき、1本前のRCIが基準以下の谷（その前の足以下）で、この足で上向き（確定足のみ）
     // S：EMA短期＜中期＜長期 のとき、1本前のRCIが基準以上の山で、この足で下向き
     compute(bars, p, TA){
       const c = bars.map(b=>b.c), n = bars.length;
       const e1 = TA.ema(c, +p.e1), e2 = TA.ema(c, +p.e2), e3 = TA.ema(c, +p.e3), r = TA.rci(c, +p.n);
-      const markers = [];
+      const labels = [];
       for (let j = 2; j < n - 1; j++){          // 形成中の足（最後の1本）では出さない
         const a = r[j-2], b = r[j-1], x = r[j];
         if (a == null || b == null || x == null || e3[j] == null) continue;
         if (e1[j] > e2[j] && e2[j] > e3[j] && b <= +p.lo && b <= a && x > b)
-          markers.push({index:j, position:'belowBar', shape:'arrowUp', color:'#26a69a', text:'L'});
+          labels.push({index:j, position:'below', color:'#26a69a', text:'L'});
         if (e1[j] < e2[j] && e2[j] < e3[j] && b >= +p.hi && b >= a && x < b)
-          markers.push({index:j, position:'aboveBar', shape:'arrowDown', color:'#ef5350', text:'S'});
+          labels.push({index:j, position:'above', color:'#ef5350', text:'S'});
       }
-      return { markers, lines:[
+      const lines = [
         {key:'e1', name:`EMA${p.e1}`, color:'#ff8a65', values:e1, width:'hair', pane:'main'},
         {key:'e2', name:`EMA${p.e2}`, color:'#ffd54f', values:e2, width:'hair', pane:'main'},
         {key:'e3', name:`EMA${p.e3}`, color:'#4fc3f7', values:e3, width:'hair', pane:'main'},
-        {key:'r',  name:`RCI${p.n}`,  color:'#ce93d8', values:r,  width:'hair', precision:1},
-      ]};
+      ];
+      if (p.sub !== '非表示') lines.push({key:'r', name:`RCI${p.n}`, color:'#ce93d8', values:r, width:'hair', precision:1});
+      return { labels, lines };
     }
   },
 
@@ -3197,6 +3200,7 @@ class Panel {
     this.chart = LC.createChart(el.querySelector('.pchart'), CHART_OPTS);
     this.candle = this.chart.addSeries(LC.CandlestickSeries, CANDLE_OPTS);
     this.markerApi = LC.createSeriesMarkers(this.candle, []);
+    this.indLabels = []; this.candle.attachPrimitive(this.labelPrim());   // 指標のラベル形式のサイン
     this.indSeries = {}; this.indLines = []; this.markersKey = ''; this.paneCount = 1;
     this.bars = []; this.sym = null; this.digits = 3; this.quote = null; this.askLine = null;
     this.unsub = null; this.loadSeq = 0; this.rafPending = false; this.rafFull = false; this.fresh = false;
@@ -3365,11 +3369,12 @@ class Panel {
   }
 
   clearIndicators(){
+    this.indLabels = [];
     for (const k of Object.keys(this.indSeries)){ this.chart.removeSeries(this.indSeries[k]); delete this.indSeries[k]; }
   }
 
   renderIndicators(full){
-    const bars = this.bars, n = bars.length, used = new Set(), markers = [];
+    const bars = this.bars, n = bars.length, used = new Set(), markers = [], labels = [];
     this.indLines = [];
     for (const ind of INDICATORS){
       const st = indState[ind.id]; if (!st.on || ind.custom) continue;
@@ -3413,12 +3418,17 @@ class Panel {
         }
         this.indLines.push({name:ln.name, color:ln.color, values:vals, prec:ln.precision ?? this.digits});
       }
+      for (const lb of res.labels || []){
+        if (lb.index < 0 || lb.index >= n) continue;
+        labels.push({t:bars[lb.index].t, below:lb.position === 'below', text:lb.text, color:lb.color || '#888'});
+      }
       for (const m of res.markers || []){
         if (m.index < 0 || m.index >= n) continue;
         markers.push({time:this.disp(bars[m.index].t), position:m.position || 'aboveBar', shape:m.shape || 'circle', color:m.color || '#fff', text:m.text || ''});
       }
     }
     for (const k of Object.keys(this.indSeries)) if (!used.has(k)){ this.chart.removeSeries(this.indSeries[k]); delete this.indSeries[k]; }
+    this.indLabels = labels; if (this.labelPrimRef && this.labelPrimRef.req) this.labelPrimRef.req();
     markers.sort((a,b)=>a.time-b.time);
     const mk = JSON.stringify(markers);
     if (full || mk !== this.markersKey){ this.markerApi.setMarkers(markers); this.markersKey = mk; }
@@ -3445,6 +3455,45 @@ class Panel {
   }
 
   // RSIの段に付ける描画（ダイバージェンスのRSI同士の線）
+  // ラベル形式のサイン：足の高値の上（安値の下）に、色付きの札と小さな三角
+  labelPrim(){
+    const self = this, prim = {
+      attached(p){ prim.chart = p.chart; prim.series = p.series; prim.req = p.requestUpdate; self.labelPrimRef = prim; },
+      detached(){ if (self.labelPrimRef === prim) self.labelPrimRef = null; },
+      updateAllViews(){},
+      paneViews(){ return [{ zOrder(){ return 'top'; }, renderer(){ return { draw:t=>self.drawLabels(t) }; } }]; },
+    };
+    return prim;
+  }
+  drawLabels(target){
+    const L = this.indLabels; if (!L || !L.length || !this.bars.length) return;
+    const ts = this.chart.timeScale(), bars = this.bars, idx = new Map(bars.map((b, i)=>[b.t, i]));
+    target.useMediaCoordinateSpace(({context:ctx, mediaSize})=>{
+      const fs = mediaSize.width < 420 ? 10 : 11;
+      ctx.save(); ctx.font = `bold ${fs}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const lb of L){
+        const i = idx.get(lb.t); if (i == null) continue;
+        const x = ts.logicalToCoordinate(i); if (x == null || x < -20 || x > mediaSize.width + 20) continue;
+        const b = bars[i], yb = this.candle.priceToCoordinate(lb.below ? b.l : b.h); if (yb == null) continue;
+        const w = ctx.measureText(lb.text).width + 8, h = fs + 5, gap = 17;   // SH/SLの文字の外側に置く
+        const top = lb.below ? yb + gap : yb - gap - h;
+        ctx.fillStyle = lb.color;
+        ctx.beginPath();
+        if (lb.below){ ctx.moveTo(x, top - 4); ctx.lineTo(x - 4, top); ctx.lineTo(x + 4, top); }
+        else { ctx.moveTo(x, top + h + 4); ctx.lineTo(x - 4, top + h); ctx.lineTo(x + 4, top + h); }
+        ctx.closePath(); ctx.fill();
+        const r = 3, l = x - w / 2;
+        ctx.beginPath();
+        ctx.moveTo(l + r, top); ctx.lineTo(l + w - r, top); ctx.quadraticCurveTo(l + w, top, l + w, top + r);
+        ctx.lineTo(l + w, top + h - r); ctx.quadraticCurveTo(l + w, top + h, l + w - r, top + h);
+        ctx.lineTo(l + r, top + h); ctx.quadraticCurveTo(l, top + h, l, top + h - r);
+        ctx.lineTo(l, top + r); ctx.quadraticCurveTo(l, top, l + r, top); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillText(lb.text, x, top + h / 2 + .5);
+      }
+      ctx.restore();
+    });
+  }
+
   rsiPrim(){
     const self = this, prim = {
       attached(p){ prim.chart = p.chart; prim.series = p.series; prim.req = p.requestUpdate; self.rsiPrimRef = prim; },
@@ -3641,11 +3690,11 @@ function buildIndList(){
         const lab = document.createElement('label'); lab.textContent = pr.label;
         let inp;
         if (pr.options){ inp = document.createElement('select'); for (const o of pr.options){ const op = document.createElement('option'); op.value = op.textContent = o; inp.appendChild(op); } }
-        else { inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.inputMode = 'decimal'; }
+        else { inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; if (!pr.signed) inp.inputMode = 'decimal'; }   // マイナスを入れる項目は、−が打てるキーボードに
         inp.value = st.p[pr.key];
         inp.onchange = ()=>{
           const v = pr.options ? inp.value : parseFloat(inp.value);
-          if (!pr.options && !(v > 0)){ inp.value = st.p[pr.key]; return; }
+          if (!pr.options && !(pr.signed ? isFinite(v) : v > 0)){ inp.value = st.p[pr.key]; return; }
           st.p[pr.key] = v; saveInd(); refreshIndicators();
         };
         lab.appendChild(inp); ps.appendChild(lab);
