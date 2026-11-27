@@ -1586,10 +1586,7 @@ class GKPanel {
     if (ok){
       // ② チャートの時間足のダイバージェンス（足 j を形成中として：j までの値動き、j で確定した転換点はまだ数えない）
       const e = gkLaneCompute(bars.slice(Math.max(0, j + 1 - GK_FETCH), j + 1), this.p.tf);
-      const typ = side === 1 ? -1 : 1;                                  // 強気はSL同士、弱気はSH同士
-      const prov = (e.provExt || []).some(x=>x.type === typ);
-      const list = prov ? (e.divP || []) : (e.div || []);
-      ok = e.ready && list.some(d=>d.bull === (side === 1));
+      ok = gkLatestDivs(e, side === 1).length > 0;                      // 暫定を含む最新2点
     }
     this.rciCache.set(key, ok);
     return ok;
@@ -2322,15 +2319,18 @@ function gkSetupFind(lanes){
     const dir = z.st.trendDirection; if (dir !== 1 && dir !== -1) continue;
     for (const dtf of GK_SETUP_DIV_TFS){
       const e = lanes[dtf]; if (!e || !e.ready) continue;
-      for (const d of (e.div || []).concat(e.divP || [])){
-        if (d.bull !== (dir === 1)) continue;
-        // 2点目のあとに価格が2点目を超えていたら（売りなら高値更新、買いなら安値更新）、そのDivは終わったものとして使わない
-        if (gkDivExceeded(e.srcBars, d)) continue;
+      // 暫定を含む最新2点のダイバージェンス（強気はSL同士、弱気はSH同士）
+      for (const d of gkLatestDivs(e, dir === 1))
         out.push({ztf, dir, zt:z.st.Zonetop, zb:z.st.Zonebottom, touches:z.touches, dtf, d});
-      }
     }
   }
   return out;
+}
+// 暫定を含む最新2点のダイバージェンス：強気はSL同士、弱気はSH同士。暫定のSL（SH）があれば「暫定×その前」、なければ確定した直近2つ
+function gkLatestDivs(lane, bull){
+  if (!lane || !lane.ready) return [];
+  const typ = bull ? -1 : 1, prov = (lane.provExt || []).some(x=>x.type === typ);
+  return (prov ? (lane.divP || []) : (lane.div || [])).filter(d=>d.bull === bull);
 }
 function gkDivExceeded(bars, d){
   if (!bars || !bars.length) return false;
@@ -2861,14 +2861,13 @@ const Scanner = {
         const hits = [];
         for (const dtf of GK_ZD_TFS.slice(zi)){
           const r = R[dtf]; if (!r || !r.ok || !r.lane) continue;
-          for (const d of (r.lane.div || []).concat(r.lane.divP || []))
-            if (d.bull === (dir === 1) && !gkDivExceeded(r.lane.srcBars, d)) hits.push({tf:dtf, d});
+          for (const d of gkLatestDivs(r.lane, dir === 1)) hits.push({tf:dtf, d});   // 暫定を含む最新2点
         }
         if (hits.length) rows.push({sym:s, ztf, zi, dir, touches:z.touches, hits});
       });
     }
     const open = store.get('scanZdOpen', true);
-    let html = `<div class="st-head" data-fold="scanZdOpen"><span class="fold">${open ? '▼' : '▶'}</span>ZONE接触×同方向Div <b>${rows.length}</b> 件<span class="note">　D1/H4/H1/M30/M15のZONEに接触中で、その時間足〜15分足に同じ向きのダイバージェンス（2点目を超えたものは除く）。時間足をタップするとチャートを開きます</span></div>`;
+    let html = `<div class="st-head" data-fold="scanZdOpen"><span class="fold">${open ? '▼' : '▶'}</span>ZONE接触×同方向Div <b>${rows.length}</b> 件<span class="note">　D1/H4/H1/M30/M15のZONEに接触中で、その時間足〜15分足に同じ向きのダイバージェンス（暫定を含む最新2点のSL同士・SH同士）。時間足をタップするとチャートを開きます</span></div>`;
     if (!open){ $('scanZd').innerHTML = html; return; }
     if (!rows.length){ $('scanZd').innerHTML = html + '<div class="st-empty">該当なし</div>'; return; }
     rows.sort((a, b)=>a.zi - b.zi || a.sym.order - b.sym.order);
