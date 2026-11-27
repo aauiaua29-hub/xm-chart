@@ -458,23 +458,29 @@ const INDICATORS = [
       {key:'xl', label:'L後のEの基準（以上）', value:70, signed:true},
       {key:'xs', label:'S後のEの基準（以下）', value:-70, signed:true},
       {key:'sub', label:'下段のRCI', value:'表示', options:['表示','非表示']},
+      {key:'zf', label:'ZONE・Div条件', value:'使う', options:['使う','使わない']},
+      {key:'zt', label:'ZONEの時間足', value:'現在足より上', options:['現在足より上','現在足以上']},
     ],
     // L：EMA短期＞中期＞長期 のとき、1本前のRCIが基準以下の谷（その前の足以下）で、この足で上向き（確定足のみ）
     // S：EMA短期＜中期＜長期 のとき、1本前のRCIが基準以上の山で、この足で下向き
     // E：Lのあと、RCIが「L後のEの基準」以上で確定した最初の足（Sのあとは「S後のEの基準」以下）。Eが出るか、反対のサインが出るまで1回だけ
-    compute(bars, p, TA){
+    // ZONE・Div条件（使う）：L/Sは、① チャートより上の時間足のGK_ZONEに接触中 ② チャートの時間足で同じ向きのダイバージェンス
+    //   （暫定を含む最新2点のSL同士・SH同士）のときだけ出す（判定はその足が確定した時点のデータで。GK_ZONEの計算そのものは変えない）
+    compute(bars, p, TA, ctx){
       const c = bars.map(b=>b.c), n = bars.length;
       const e1 = TA.ema(c, +p.e1), e2 = TA.ema(c, +p.e2), e3 = TA.ema(c, +p.e3), r = TA.rci(c, +p.n);
       const labels = []; let side = 0;        // 1：Lのあと、-1：Sのあと、0：なし
+      const useZ = p.zf !== '使わない' && ctx && ctx.zoneDiv, budget = performance.now() + 150;
+      const pass = (j, sd)=>{ if (!useZ) return true; const r = ctx.zoneDiv(j, sd, p, budget); if (r === null) ctx.pending = true; return r === true; };
       for (let j = 2; j < n - 1; j++){          // 形成中の足（最後の1本）では出さない
         const a = r[j-2], b = r[j-1], x = r[j];
         if (x != null && side === 1 && x >= +p.xl){ labels.push({index:j, position:'above', color:'#fdd835', textColor:'#1a1a1a', text:'E'}); side = 0; }
         else if (x != null && side === -1 && x <= +p.xs){ labels.push({index:j, position:'below', color:'#fdd835', textColor:'#1a1a1a', text:'E'}); side = 0; }
         if (a == null || b == null || x == null || e3[j] == null) continue;
-        if (e1[j] > e2[j] && e2[j] > e3[j] && b <= +p.lo && b <= a && x > b){
+        if (e1[j] > e2[j] && e2[j] > e3[j] && b <= +p.lo && b <= a && x > b && pass(j, 1)){
           labels.push({index:j, position:'below', color:'#26a69a', text:'L'}); side = 1;
         }
-        if (e1[j] < e2[j] && e2[j] < e3[j] && b >= +p.hi && b >= a && x < b){
+        if (e1[j] < e2[j] && e2[j] < e3[j] && b >= +p.hi && b >= a && x < b && pass(j, -1)){
           labels.push({index:j, position:'above', color:'#ef5350', text:'S'}); side = -1;
         }
       }
@@ -1545,9 +1551,54 @@ class GKPanel {
     this.loadHtf();
   }
 
+  /* ---- RCI×パーフェクトオーダーの「ZONE・Div条件」：チャートの足 j が確定した時点で判定する ----
+   *  ① チャートより上の時間足（設定で「現在足以上」も可）のGK_ZONEに、その時間足の足がかかっている（接触中）
+   *  ② チャートの時間足で、そのZONEと同じ向きのダイバージェンス（暫定を含む最新2点のSL同士／SH同士）
+   *  side：1＝L（上昇ZONE・強気Div）、-1＝S（下降ZONE・弱気Div）
+   *  戻り値：true／false、まだデータが無い・時間切れなら null（あとで描き直す） */
+  rciZoneDivOk(j, side, p, budget){
+    const bars = this.p.bars, b = bars[j]; if (!b) return false;
+    if (!this.rciCache) this.rciCache = new Map();
+    const tfs = this.rciTfs(), loaded = tfs.filter(tf=>this.mtfData[tf]);
+    if (loaded.length < tfs.length) return null;
+    const key = b.t + ':' + side + ':' + p.zt + ':' + loaded.join(',') + ':' + JSON.stringify(gkSettings().pivotMode) + gkSettings().zoneCloseInv;
+    if (this.rciCache.has(key)) return this.rciCache.get(key);
+    if (budget && performance.now() > budget) return null;
+    const chartSec = TF_SEC[this.p.tf], T = b.t + chartSec;          // 足 j が確定した時刻
+    let ok = false, zinfo = [];
+    // ① ZONE：その時間足の確定足＋（j までのチャートの足で作った）形成中の足
+    for (const tf of loaded.concat(p.zt === '現在足以上' ? [this.p.tf] : [])){
+      let lane;
+      if (tf === this.p.tf) lane = gkLaneCompute(bars.slice(Math.max(0, j + 1 - GK_FETCH), j + 1), tf);
+      else {
+        const zb = this.mtfData[tf]; let k = -1;
+        for (let i = zb.length - 1; i >= 0; i--) if (zb[i].t <= b.t){ k = i; break; }
+        if (k < GK_KEEP) continue;
+        let o = null, h = -Infinity, l = Infinity;
+        for (let i = j; i >= 0 && bars[i].t >= zb[k].t; i--){ o = bars[i].o; h = Math.max(h, bars[i].h); l = Math.min(l, bars[i].l); }
+        if (o == null){ o = zb[k].o; h = zb[k].h; l = zb[k].l; }
+        if (bars[0].t > zb[k].t){ h = Math.max(h, zb[k].o); l = Math.min(l, zb[k].o); o = zb[k].o; }   // 足の始まりがチャートの範囲外
+        const forming = {t:zb[k].t, o, h, l, c:b.c, v:0};
+        lane = gkLaneCompute(zb.slice(Math.max(0, k - GK_FETCH + 1), k).concat([forming]), tf);
+      }
+      if (lane.ready && lane.contact && lane.st.trendDirection === side){ ok = true; zinfo.push(tf); }
+    }
+    if (ok){
+      // ② チャートの時間足のダイバージェンス（足 j を形成中として：j までの値動き、j で確定した転換点はまだ数えない）
+      const e = gkLaneCompute(bars.slice(Math.max(0, j + 1 - GK_FETCH), j + 1), this.p.tf);
+      const typ = side === 1 ? -1 : 1;                                  // 強気はSL同士、弱気はSH同士
+      const prov = (e.provExt || []).some(x=>x.type === typ);
+      const list = prov ? (e.divP || []) : (e.div || []);
+      ok = e.ready && list.some(d=>d.bull === (side === 1));
+    }
+    this.rciCache.set(key, ok);
+    return ok;
+  }
+
   /* ---- 他の時間足（5m〜1D）の暫定ダイバージェンス：2点目の価格をチャートに表示するためのデータ ---- */
   // 受信する時間足：表示する暫定ダイバージェンスの時間足＋（1mチャートなら）セットアップ判定の1H・4H・5m・15m
-  mtfTfs(){
+  // GKの表示に使う時間足（GKがオフなら無し）
+  mtfTfsGk(){
     const S = gkSettings(); if (!this.on() || !this.p.sym) return [];
     const set = new Set();
     if (S.divLines && S.mtfDivPts) for (const tf of GKD_TFS) if (S.mtfDivTfs[tf]) set.add(tf);
@@ -1555,11 +1606,21 @@ class GKPanel {
     set.delete(this.p.tf);
     return [...set];
   }
-  mtfWanted(){ return this.mtfTfs().length > 0; }
+  // RCI×パーフェクトオーダーの「ZONE・Div条件」に使う、チャートより上の時間足（GKの表示がオフでも読む）
+  rciTfs(){
+    const st = typeof indState !== 'undefined' && indState.rcipo;
+    if (!this.p.sym || !st || !st.on || st.p.zf === '使わない') return [];
+    const ci = TIMEFRAMES.indexOf(this.p.tf);
+    return GKD_TFS.filter(tf=>TIMEFRAMES.indexOf(tf) > ci || (st.p.zt === '現在足以上' && tf === this.p.tf)).filter(tf=>tf !== this.p.tf);
+  }
+  mtfTfs(){ return [...new Set(this.mtfTfsGk().concat(this.rciTfs()))]; }
+  mtfWanted(){ return this.mtfTfsGk().length > 0; }
   mtfStart(){
     this.mtfStop();
     this.mtfPts = []; this.mtfData = {}; this.mtfDirty = true; this.mtfAt = 0;
-    if (!this.mtfWanted()) return;
+    if (!this.mtfTfs().length) return;
+    if (!this.p.sym) return;
+    this.rciCache = new Map();
     const seq = this.mtfSeq, key = this.p.sym.key;
     for (const tf of this.mtfTfs()){     // 使わない時間足はデータも受信しない
       this.mtfLoad(tf, seq, key);
@@ -1573,7 +1634,9 @@ class GKPanel {
   }
   async mtfLoad(tf, seq, key){
     try{
-      const bars = Replay.active ? await Replay.get(key, tf) : await G.src.history(key, tf, GK_FETCH);
+      // RCIの条件で過去の足まで判定するので、その時間足は多めに読む
+      const n = this.rciTfs().includes(tf) ? MAX_BARS : GK_FETCH;
+      const bars = Replay.active ? await Replay.get(key, tf) : await G.src.history(key, tf, n);
       if (seq !== this.mtfSeq) return;
       this.mtfData[tf] = Replay.active ? bars : bars.slice();
       this.mtfDirty = true; this.p.schedule(false);
@@ -1593,10 +1656,10 @@ class GKPanel {
     const now = performance.now();
     if (!Replay.active && !(this.mtfDirty && now - this.mtfAt >= 1000)) return this.mtfPts;
     const out = [], S = gkSettings(), lanes = {};
-    for (const tf of this.mtfTfs()){
+    for (const tf of this.mtfTfsGk()){
       let bars = this.mtfData[tf]; if (!bars) continue;
       if (Replay.active) bars = Replay.view(bars, TF_SEC[tf], this.p.replayStep, Replay.T);
-      const e = gkLaneCompute(bars, tf);
+      const e = gkLaneCompute(bars.length > GK_FETCH ? bars.slice(-GK_FETCH) : bars, tf);
       if (e.ready) lanes[tf] = e;
     }
     if (S.divLines && S.mtfDivPts) for (const tf of GKD_TFS) if (S.mtfDivTfs[tf] && lanes[tf]) for (const d of (lanes[tf].divP || [])) out.push({tf, d});
@@ -3451,7 +3514,9 @@ class Panel {
     this.indLines = [];
     for (const ind of INDICATORS){
       const st = indState[ind.id]; if (!st.on || ind.custom) continue;
-      let res; try{ res = ind.compute(bars, st.p, TA) || {}; }catch(e){ console.error(ind.name, e); continue; }
+      const ctx = {zoneDiv:(j, sd, pp, budget)=>this.gk.rciZoneDivOk(j, sd, pp, budget), pending:false};
+      let res; try{ res = ind.compute(bars, st.p, TA, ctx) || {}; }catch(e){ console.error(ind.name, e); continue; }
+      if (ctx.pending && !this.indRetry){ this.indRetry = setTimeout(()=>{ this.indRetry = null; this.schedule(true); }, 400); }   // データ待ち・計算の続きは少し後に
       for (const ln of res.lines || []){
         const k = ind.id + ':' + ln.key; used.add(k);
         let s = this.indSeries[k], created = false;
