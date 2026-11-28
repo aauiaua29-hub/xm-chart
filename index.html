@@ -1619,19 +1619,10 @@ class GKPanel {
    *   ② その転換で確定する暫定ダイバージェンス（終わった区間の安値＝暫定SL とその前のSL。Sは高値＝暫定SH とその前のSH）
    *  を満たせば L（上昇に転換）／S（下降に転換）。そのあと逆に転換した足で E。確定した足だけで判定 */
   stSignals(){
-    const S = gkSettings(), bars = this.p.bars, n = bars.length; if (n < GK_KEEP + 3) return [];
-    const d = gkSuperTrendDirs(bars, Math.max(1, +S.stPeriod || 20), +S.stMult || 1);
-    const out = [], budget = performance.now() + 150, p = {zt:S.sigZt, provOnly:true};
-    let side = 0, pending = false;
-    for (let j = 1; j < n - 1; j++){
-      if (d[j] == null || d[j-1] == null || d[j] === d[j-1]) continue;
-      if (side && d[j] !== side){ out.push({li:j, text:'E', below:side === -1, color:'#fdd835', textColor:'#1a1a1a'}); side = 0; }
-      const r = this.rciZoneDivOk(j, d[j], p, budget);
-      if (r === null){ pending = true; continue; }
-      if (r){ out.push(d[j] === 1 ? {li:j, text:'L', below:true, color:'#26a69a'} : {li:j, text:'S', below:false, color:'#ef5350'}); side = d[j]; }
-    }
-    if (pending && !this.sigRetry) this.sigRetry = setTimeout(()=>{ this.sigRetry = null; this.refresh(); }, 400);   // データ待ち・計算の続き
-    return out;
+    const budget = performance.now() + 150;
+    const r = gkStSignals(this.p.bars, gkSettings(), (j, sd, p)=>this.rciZoneDivOk(j, sd, p, budget));
+    if (r.pending && !this.sigRetry) this.sigRetry = setTimeout(()=>{ this.sigRetry = null; this.refresh(); }, 400);   // データ待ち・計算の続き
+    return r.sigs;
   }
 
   /* ---- 他の時間足（5m〜1D）の暫定ダイバージェンス：2点目の価格をチャートに表示するためのデータ ---- */
@@ -2450,6 +2441,21 @@ function gkSetupReason(s){
  *  ② チャートの時間足で、そのZONEと同じ向きのダイバージェンス（暫定を含む最新2点）
  *  side：1＝L（上昇ZONE・強気Div）、-1＝S（下降ZONE・弱気Div）。tfBars(tf)：その時間足の足（古い順）
  *  戻り値：{ok, zones:[時間足…], divs:[Div…]}（必要なデータが無いときは null） */
+// GKのサイン（チャートと一覧で共通）。zoneDiv(j, side, p)：true／false／null（データ待ち）
+function gkStSignals(bars, S, zoneDiv){
+  const n = bars.length, sigs = []; if (n < GK_KEEP + 3) return {sigs, pending:false};
+  const d = gkSuperTrendDirs(bars, Math.max(1, +S.stPeriod || 20), +S.stMult || 1);
+  const p = {zt:S.sigZt, provOnly:true};
+  let side = 0, pending = false;
+  for (let j = 1; j < n - 1; j++){
+    if (d[j] == null || d[j-1] == null || d[j] === d[j-1]) continue;
+    if (side && d[j] !== side){ sigs.push({li:j, text:'E', below:side === -1, color:'#fdd835', textColor:'#1a1a1a'}); side = 0; }
+    const r = zoneDiv(j, d[j], p);
+    if (r === null){ pending = true; continue; }
+    if (r){ sigs.push(d[j] === 1 ? {li:j, text:'L', below:true, color:'#26a69a'} : {li:j, text:'S', below:false, color:'#ef5350'}); side = d[j]; }
+  }
+  return {sigs, pending};
+}
 function gkRciHigherTfs(tf, zt){
   const ci = TIMEFRAMES.indexOf(tf);
   return GKD_TFS.filter(x=>TIMEFRAMES.indexOf(x) > ci);
@@ -3024,19 +3030,32 @@ const Scanner = {
    * 損益：買いは（決済−エントリー）、売りは（エントリー−決済）から、今のスプレッドを1回分引く。まだ決済していないものは今の値で「未決済」 */
   btDay:null,
   jstDay(t){ const d = new Date((t - G.serverOffset + 9 * 3600) * 1000); return d.toISOString().slice(0, 10); },
-  btTrades(sym, tf){
+  // サインの種類：RCI（RCI×パーフェクトオーダー）と、GK（GK_ZONEのサイン。「サインを表示」がオンでSuperTrend方式のときだけ）
+  sigSources(){ const S = gkSettings(); return ['RCI'].concat(S.sigOn && S.pivotMode === 'st' ? ['GK'] : []); },
+  // その種類のサイン（L/S/E）を、チャートと同じ条件で出す
+  sigLabels(sym, tf, src){
     const d = this.data[sym.key], bars = d && d[tf]; if (!bars || bars.length < 60) return null;
-    const def = INDICATORS.find(x=>x.id === 'rcipo'), p = Object.assign({}, indState.rcipo.p);
-    const S = gkSettings(), pk = JSON.stringify(p) + S.pivotMode + S.stPeriod + S.stMult + S.zoneCloseInv, tfBars = x=>d[x];
-    const ctx = {zoneDiv:(j, sd, pp)=>{
+    const S = gkSettings(), tfBars = x=>d[x];
+    const cached = (j, sd, pp, pk)=>{
       const k = sym.key + '|' + tf + '|' + bars[j].t + '|' + sd + '|' + pk;
       if (!this.rciCache.has(k)){ const r = gkRciZoneDivEval(bars, tf, j, sd, pp, tfBars); this.rciCache.set(k, !!(r && r.ok)); }
       return this.rciCache.get(k);
-    }};
-    let res; try{ res = def.compute(bars, p, TA, ctx); }catch(e){ return null; }
-    const trades = []; let pos = null;
+    };
+    const base = S.pivotMode + S.stPeriod + S.stMult + S.zoneCloseInv;
+    if (src === 'GK'){
+      const r = gkStSignals(bars, S, (j, sd, pp)=>cached(j, sd, pp, 'GK' + JSON.stringify(pp) + base));
+      return {labels:r.sigs.map(q=>({index:q.li, text:q.text})), from:bars[Math.min(bars.length - 1, GK_KEEP + 1)].t};
+    }
+    const def = INDICATORS.find(x=>x.id === 'rcipo'), p = Object.assign({}, indState.rcipo.p), pk = JSON.stringify(p) + base;
+    let res; try{ res = def.compute(bars, p, TA, {zoneDiv:(j, sd, pp)=>cached(j, sd, pp, pk)}); }catch(e){ return null; }
+    return {labels:res.labels || [], from:bars[Math.min(bars.length - 1, p.zf === '使わない' ? Math.max(+p.e3, +p.n) + 2 : GK_KEEP + 1)].t};
+  },
+  // L/S/E から取引を作る。エントリー＝L/Sの足の終値、決済＝Eか反対のサインの足の終値（反対のサインならそのまま反対にエントリー）
+  btTrades(sym, tf, src){
+    const r = this.sigLabels(sym, tf, src); if (!r) return null;
+    const bars = this.data[sym.key][tf], trades = []; let pos = null;
     const close = (i, why)=>{ pos.exitIdx = i; pos.exit = bars[i].c; pos.why = why; trades.push(pos); pos = null; };
-    for (const l of res.labels || []){
+    for (const l of r.labels){
       if (l.text === 'E'){ if (pos) close(l.index, 'E'); continue; }
       const side = l.text === 'L' ? 1 : -1;
       if (pos && pos.side === side) continue;
@@ -3044,8 +3063,7 @@ const Scanner = {
       pos = {side, idx:l.index, t:bars[l.index].t, entry:bars[l.index].c};
     }
     if (pos){ pos.exit = bars[bars.length - 1].c; pos.open = true; trades.push(pos); }
-    // 判定できる最初の足（GKの判定に必要な本数）
-    return {trades, from:bars[Math.min(bars.length - 1, p.zf === '使わない' ? Math.max(+p.e3, +p.n) + 2 : GK_KEEP + 1)].t};
+    return {trades, from:r.from};
   },
   btPL(sym, x){
     const r = this.rciPL(sym, {side:x.side, entry:x.entry, price:x.exit});
@@ -3057,12 +3075,13 @@ const Scanner = {
     const el = $('scanBt'); if (!el) return;
     const open = store.get('scanBtOpen', true), tfs = this.rciTfs();
     if (!this.btDay){ const y = new Date(Date.now() + 9 * 3600 * 1000 - 24 * 3600 * 1000); this.btDay = y.toISOString().slice(0, 10); }
-    let html = `<div class="st-head" data-fold="scanBtOpen"><span class="fold">${open ? '▼' : '▶'}</span>RCIサインの成績<span class="note">　その日（日本時間）にエントリーしたL/Sの結果。エントリー＝サインの足の終値、決済＝Eか反対のサインの足の終値。損益は今のスプレッドを1回分引いた値。対象：${tfs.join('・') || 'なし'}</span></div>`;
+    const srcs = this.sigSources();
+    let html = `<div class="st-head" data-fold="scanBtOpen"><span class="fold">${open ? '▼' : '▶'}</span>サインの成績（${srcs.join('・')}）<span class="note">　その日（日本時間）にエントリーしたL/Sの結果。エントリー＝サインの足の終値、決済＝Eか反対のサインの足の終値。損益は今のスプレッドを1回分引いた値。対象：${tfs.join('・') || 'なし'}。GKはGK_ZONEの「サインを表示」がオン（SuperTrend方式）のときだけ</span></div>`;
     if (!open){ el.innerHTML = html; return; }
     html += `<div class="bt-bar">日付 <input type="date" id="btDay" value="${this.btDay}"> <span class="note">行をタップすると取引の一覧を表示</span></div>`;
     const rows = [];
-    for (const s of G.symbols) for (const tf of tfs){
-      const r = this.btTrades(s, tf); if (!r) continue;
+    for (const s of G.symbols) for (const tf of tfs) for (const src of srcs){
+      const r = this.btTrades(s, tf, src); if (!r) continue;
       const day = r.trades.filter(x=>this.jstDay(x.t) === this.btDay);
       const dayStart = Date.parse(this.btDay + 'T00:00:00+09:00') / 1000 + G.serverOffset;   // その日の0時（日本時間）をサーバー時刻で
       const partial = r.from > dayStart;
@@ -3071,10 +3090,10 @@ const Scanner = {
       const closed = day.map((x, i)=>({x, pl:pl[i]})).filter(o=>!o.x.open);
       const wins = closed.filter(o=>o.pl.v > 0).length, sum = Math.round(closed.reduce((a, o)=>a + o.pl.v, 0) * 10) / 10;
       const op = day.map((x, i)=>({x, pl:pl[i]})).filter(o=>o.x.open);
-      rows.push({s, tf, day, closed, wins, sum, op, unit:pl[0] ? pl[0].unit : (s.digits === 3 || s.digits === 5 ? 'pips' : 'pt'), partial, from:r.from});
+      rows.push({s, tf, src, day, closed, wins, sum, op, unit:pl[0] ? pl[0].unit : (s.digits === 3 || s.digits === 5 ? 'pips' : 'pt'), partial, from:r.from});
     }
     const fmtV = (v, u)=>(v > 0 ? '+' : '') + (u === 'pips' ? v.toFixed(1) : Math.round(v)) + u;
-    html += '<table><thead><tr><th>銘柄</th><th>時間足</th><th>取引</th><th>勝ち/負け</th><th>勝率</th><th>獲得</th><th>未決済</th></tr></thead><tbody>';
+    html += '<table><thead><tr><th>銘柄</th><th>時間足</th><th>サイン</th><th>取引</th><th>勝ち/負け</th><th>勝率</th><th>獲得</th><th>未決済</th></tr></thead><tbody>';
     let tN = 0, tW = 0, tP = 0, aN = 0, aW = 0, aD = 0;
     const perSym = new Map();   // pt の銘柄：単位が銘柄ごとに違うので、銘柄ごとに合計
     for (const r of rows){
@@ -3084,11 +3103,11 @@ const Scanner = {
       else if (n){ const q = perSym.get(r.s.name) || {n:0, v:0}; q.n += n; q.v += r.sum; perSym.set(r.s.name, q); }
       const opTxt = r.op.length ? r.op.map(o=>`${o.x.side === 1 ? '買' : '売'} ${fmtV(o.pl.v, o.pl.unit)}`).join('、') : '-';
       const note = r.partial ? `<div class="note">※${fmtJst(r.from).split(' ')[1]}以降のみ（保存されている足の範囲）</div>` : '';
-      html += `<tr class="bt-row" data-key="${esc(r.s.key)}|${r.tf}"><th>${esc(r.s.name)}</th><td data-l="時間足">${gkTFText(TF_SEC[r.tf] / 60)}${note}</td>` +
+      html += `<tr class="bt-row" data-key="${esc(r.s.key)}|${r.tf}|${r.src}"><th>${esc(r.s.name)}</th><td data-l="時間足">${gkTFText(TF_SEC[r.tf] / 60)}${note}</td><td data-l="サイン">${r.src}</td>` +
         `<td data-l="取引">${n}回</td><td data-l="勝ち/負け">${r.wins}勝 ${n - r.wins - r.closed.filter(o=>o.pl.v === 0).length}敗${r.closed.some(o=>o.pl.v === 0) ? ` ±0 ${r.closed.filter(o=>o.pl.v === 0).length}` : ''}</td><td data-l="勝率">${rate}</td>` +
         `<td data-l="獲得"><b class="${r.sum >= 0 ? 'pl-p' : 'pl-m'}">${n ? fmtV(r.sum, r.unit) : '-'}</b></td><td data-l="未決済">${opTxt}</td></tr>`;
-      if (this.btOpenKey === r.s.key + '|' + r.tf && r.day.length){
-        html += `<tr class="bt-detail"><td colspan="7">` + r.day.map(x=>{
+      if (this.btOpenKey === r.s.key + '|' + r.tf + '|' + r.src && r.day.length){
+        html += `<tr class="bt-detail"><td colspan="8">` + r.day.map(x=>{
           const v = this.btPL(r.s, x);
           return `<div>${x.side === 1 ? '<span class="up">買い（L）</span>' : '<span class="dn">売り（S）</span>'}　${fmtJst(x.t)} ${(+x.entry).toFixed(r.s.digits)} → ` +
             (x.open ? `未決済（今 ${(+x.exit).toFixed(r.s.digits)}）` : `${fmtJst(this.data[r.s.key][r.tf][x.exitIdx].t)} ${(+x.exit).toFixed(r.s.digits)}（${x.why}）`) +
@@ -3099,9 +3118,21 @@ const Scanner = {
     html += '</tbody></table>';
     // 合計：回数・勝敗・勝率は全銘柄。獲得は単位ごと（pipsの銘柄はまとめて、ptの銘柄は銘柄ごと）。未決済を除く
     const bv = (v, u)=>`<b class="${v >= 0 ? 'pl-p' : 'pl-m'}">${fmtV(v, u)}</b>`;
-    let sum = `<div class="bt-sum"><b>全銘柄の合計</b>：${aN}回　${aW}勝 ${aN - aW - aD}敗${aD ? `（±0が${aD}回）` : ''}　勝率 ${aN ? Math.round(aW / aN * 100) + '%' : '-'}（未決済を除く）</div>`;
-    sum += `<div class="bt-sum">獲得（pipsの銘柄${tN ? `・${tN}回` : ''}）：${tN ? bv(tP, 'pips') : '-'}</div>`;
-    if (perSym.size) sum += `<div class="bt-sum">獲得（ptの銘柄は単位が違うため銘柄ごと）：` + [...perSym].map(([nm, q])=>`${esc(nm)} ${bv(q.v, 'pt')}（${q.n}回）`).join('、') + '</div>';
+    // サインの種類ごとに合計（RCI と GK は別の手法なので混ぜない）
+    let sum = '';
+    for (const src of srcs){
+      let n = 0, w = 0, z = 0, pn = 0, pv = 0; const ps = new Map();
+      for (const r of rows){
+        if (r.src !== src) continue;
+        const k = r.closed.length; n += k; w += r.wins; z += r.closed.filter(o=>o.pl.v === 0).length;
+        if (r.unit === 'pips'){ pn += k; pv = Math.round((pv + r.sum) * 10) / 10; }
+        else if (k){ const q = ps.get(r.s.name) || {n:0, v:0}; q.n += k; q.v += r.sum; ps.set(r.s.name, q); }
+      }
+      sum += `<div class="bt-sum"><b>【${src}】全銘柄の合計</b>：${n}回　${w}勝 ${n - w - z}敗${z ? `（±0が${z}回）` : ''}　勝率 ${n ? Math.round(w / n * 100) + '%' : '-'}（未決済を除く）`;
+      sum += `　獲得（pipsの銘柄${pn ? `・${pn}回` : ''}）：${pn ? bv(pv, 'pips') : '-'}`;
+      if (ps.size) sum += `　／ ptの銘柄：` + [...ps].map(([nm, q])=>`${esc(nm)} ${bv(q.v, 'pt')}（${q.n}回）`).join('、');
+      sum += '</div>';
+    }
     html += sum;
     el.innerHTML = html;
   },
@@ -3109,26 +3140,12 @@ const Scanner = {
   rciTfs(){ return INDICATORS.some(x=>x.id === 'rcipo') && indState.rcipo ? this.tfs.slice() : []; },
   // 時間足ごとに、チャートと同じ条件でL・S・Eを出し、最後に残っているポジション（Lのあと／Sのあと）を返す
   rciPositions(sym, d, tfs){
-    const def = INDICATORS.find(x=>x.id === 'rcipo'), p = Object.assign({}, indState.rcipo.p), out = [];
-    const S = gkSettings(), pk = JSON.stringify(p) + S.pivotMode + S.stPeriod + S.stMult + S.zoneCloseInv;
-    for (const tf of tfs){
-      const bars = d[tf]; if (!bars || bars.length < 60) continue;
-      const tfBars = x=>d[x];
-      const ctx = {zoneDiv:(j, sd, pp)=>{
-        const k = sym.key + '|' + tf + '|' + bars[j].t + '|' + sd + '|' + pk;
-        if (!this.rciCache.has(k)){ const r = gkRciZoneDivEval(bars, tf, j, sd, pp, tfBars); this.rciCache.set(k, !!(r && r.ok)); }
-        return this.rciCache.get(k);
-      }};
-      let res; try{ res = def.compute(bars, p, TA, ctx); }catch(e){ continue; }
-      let pos = null;
-      for (const l of res.labels || []){
-        if (l.text === 'E'){ pos = null; continue; }
-        const side = l.text === 'L' ? 1 : -1;
-        if (!pos || pos.side !== side) pos = {side, idx:l.index};   // 同じ向きのサインが続いても、最初のサインで保有中
-      }
-      if (!pos) continue;
-      const n = bars.length, eb = bars[pos.idx];
-      out.push({tf, side:pos.side, t:eb.t, entry:eb.c, price:bars[n-1].c, bars:n - 1 - pos.idx});
+    const out = [];
+    for (const tf of tfs) for (const src of this.sigSources()){
+      const r = this.btTrades(sym, tf, src); if (!r) continue;
+      const pos = r.trades.find(x=>x.open); if (!pos) continue;   // 同じ向きのサインが続いても、最初のサインで保有中
+      const bars = d[tf], n = bars.length;
+      out.push({tf, src, side:pos.side, t:pos.t, entry:pos.entry, price:bars[n-1].c, bars:n - 1 - pos.idx});
     }
     if (this.rciCache.size > 20000) this.rciCache.clear();
     return out;
@@ -3141,18 +3158,19 @@ const Scanner = {
   },
   renderRciPos(){
     const rows = [];
-    for (const s of G.symbols) for (const x of (this.rciPos[s.key] || [])) rows.push({sym:s, x, pl:this.rciPL(s, x)});
+    const srcs = this.sigSources();
+    for (const s of G.symbols) for (const x of (this.rciPos[s.key] || [])) if (srcs.includes(x.src)) rows.push({sym:s, x, pl:this.rciPL(s, x)});
     const open = store.get('scanRciOpen', true), tfs = this.rciTfs();
-    let html = `<div class="st-head" data-fold="scanRciOpen"><span class="fold">${open ? '▼' : '▶'}</span>RCIポジション（保有中） <b>${rows.length}</b> 件<span class="note">　RCI×パーフェクトオーダーのL（S）が出てから、E・反対のサインが出るまで。対象：${tfs.join('・') || 'なし'}（上の時間足の選択と同じ）。損益は現在のスプレッドを引いた値</span></div>`;
+    let html = `<div class="st-head" data-fold="scanRciOpen"><span class="fold">${open ? '▼' : '▶'}</span>サインのポジション（保有中・${this.sigSources().join('・')}） <b>${rows.length}</b> 件<span class="note">　L（S）が出てから、E・反対のサインが出るまで。RCI＝RCI×パーフェクトオーダー、GK＝GK_ZONEのサイン（「サインを表示」がオンでSuperTrend方式のときだけ）。対象：${tfs.join('・') || 'なし'}（上の時間足の選択と同じ）。損益は現在のスプレッドを引いた値</span></div>`;
     if (!open){ $('scanRci').innerHTML = html; return; }
     if (!rows.length){ $('scanRci').innerHTML = html + '<div class="st-empty">保有中なし</div>'; return; }
-    rows.sort((a, b)=>a.sym.order - b.sym.order || TIMEFRAMES.indexOf(a.x.tf) - TIMEFRAMES.indexOf(b.x.tf));
-    html += '<table><thead><tr><th>銘柄・方向</th><th>時間足</th><th>エントリー</th><th>現在値</th><th>損益</th><th>経過</th></tr></thead><tbody>';
+    rows.sort((a, b)=>a.sym.order - b.sym.order || TIMEFRAMES.indexOf(a.x.tf) - TIMEFRAMES.indexOf(b.x.tf) || a.x.src.localeCompare(b.x.src));
+    html += '<table><thead><tr><th>銘柄・方向</th><th>時間足</th><th>サイン</th><th>エントリー</th><th>現在値</th><th>損益</th><th>経過</th></tr></thead><tbody>';
     for (const r of rows){
       const x = r.x, dg = r.sym.digits, buy = x.side === 1, v = r.pl.v;
       const plt = (v >= 0 ? '+' : '') + (r.pl.unit === 'pips' ? v.toFixed(1) : Math.round(v)) + r.pl.unit;
       html += `<tr data-sym="${esc(r.sym.key)}" data-tf="${x.tf}"><th>${esc(r.sym.name)}　<span class="${buy ? 'up' : 'dn'}">${buy ? '買い（L）' : '売り（S）'}</span></th>` +
-        `<td data-l="時間足">${gkTFText(TF_SEC[x.tf] / 60)}</td>` +
+        `<td data-l="時間足">${gkTFText(TF_SEC[x.tf] / 60)}</td><td data-l="サイン">${x.src}</td>` +
         `<td data-l="エントリー">${(+x.entry).toFixed(dg)}<span class="note">（${fmtJst(x.t)}の足）</span></td>` +
         `<td data-l="現在値">${(+x.price).toFixed(dg)}</td>` +
         `<td data-l="損益"><b class="${v >= 0 ? 'pl-p' : 'pl-m'}">${plt}</b>${r.pl.sp == null ? '<span class="note">（スプレッド不明）</span>' : ''}</td>` +
