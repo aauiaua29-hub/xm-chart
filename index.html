@@ -131,19 +131,6 @@
   #scanRci .st-wait{color:#ffd54f;font-weight:700} #scanRci .st-brk{color:#9aa0a6}
   #scanRci .st-why{font-size:12px;color:#c9ced6;white-space:normal;min-width:220px}
   #scanRci .pl-p{color:#26a69a} #scanRci .pl-m{color:#ef5350}
-  #scanBt{padding:6px 10px 2px;border-bottom:1px solid var(--line);max-height:45vh;overflow:auto}
-  #scanBt .st-head{font-size:13px;color:var(--muted);margin-bottom:4px} #scanBt .st-head b{color:var(--warn);font-size:15px}
-  #scanBt .st-empty{font-size:12px;color:var(--muted);padding:2px 0 6px}
-  #scanBt table{border-collapse:collapse;font-size:13px;min-width:100%}
-  #scanBt th,#scanBt td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:left;vertical-align:top}
-  #scanBt thead th{color:var(--muted);font-weight:600;font-size:12px}
-  #scanBt tbody tr{cursor:pointer} #scanBt tbody tr:hover{background:rgba(255,255,255,.04)}
-  #scanBt .up{color:#66bb6a;font-weight:700} #scanBt .dn{color:#ffa726;font-weight:700}
-  #scanBt .st-wait{color:#ffd54f;font-weight:700} #scanBt .st-brk{color:#9aa0a6}
-  #scanBt .st-why{font-size:12px;color:#c9ced6;white-space:normal;min-width:220px}
-  #scanBt .pl-p{color:#26a69a} #scanBt .pl-m{color:#ef5350}
-  #scanBt .bt-bar{font-size:13px;margin:2px 0 6px} #scanBt .bt-bar input{background:#1b1f27;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px 6px}
-  #scanBt .bt-detail td{white-space:normal;font-size:12px;color:#c9ced6;background:rgba(255,255,255,.02)} #scanBt .bt-sum{font-size:13px;padding:6px 2px}
   .zd-chip{display:inline-block;padding:3px 8px;margin:2px 4px 2px 0;border-radius:6px;border:1px solid var(--line);font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
   .zd-chip.bull{color:#4dd0e1;border-color:rgba(77,208,225,.5);background:rgba(77,208,225,.08)}
   .zd-chip.bear{color:#ff6b6b;border-color:rgba(255,107,107,.5);background:rgba(255,107,107,.08)}
@@ -170,7 +157,6 @@
     #scanSetup{max-height:none;overflow-x:auto}
     #scanZd{max-height:none;overflow-x:auto}
     #scanRci{max-height:none;overflow-x:auto}
-    #scanBt{max-height:none;overflow-x:auto}
     #scanTable{overflow:visible;padding:0 4px 8px}
     #scanTable table{min-width:100%}
   }
@@ -197,14 +183,6 @@
     #scanRci tbody th{font-size:15px}
     #scanRci td[data-l]::before{content:attr(data-l) '：';color:var(--muted);font-weight:400;font-size:12px}
     #scanRci .st-why{min-width:0;margin-top:2px}
-    #scanBt thead{display:none}
-    #scanBt table,#scanBt tbody{display:block;min-width:0}
-    #scanBt tbody tr{display:block;border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin:0 0 8px}
-    #scanBt th,#scanBt td{display:block;border:0;padding:2px 0;white-space:normal}
-    #scanBt tbody th{font-size:15px}
-    #scanBt td[data-l]::before{content:attr(data-l) '：';color:var(--muted);font-weight:400;font-size:12px}
-    #scanBt .st-why{min-width:0;margin-top:2px}
-    #scanBt .bt-detail{display:block}
   }
   /* リプレイ */
   #rpBar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;background:#1a1530;border-top:1px solid #4b3c8a}
@@ -278,7 +256,6 @@
     </div>
     <div id="scanSetup"></div>
     <div id="scanRci"></div>
-    <div id="scanBt"></div>
     <div id="scanZd"></div>
     <div id="scanSummary"></div>
     <div id="scanTable"></div>
@@ -2841,7 +2818,7 @@ const Scanner = {
       if (found.length){
         const m1 = await fetchTf('M1');
         this.setups[s.key] = found.map(x=>Object.assign(x, m1 ? gkSetupMark(m1, x) : {status:'1m取得失敗'}));
-      } else { delete this.setups[s.key]; if (!rciNeed.has('M1')){ delete d.M1; delete d['@M1']; } }
+      } else { delete this.setups[s.key]; delete d.M1; }
       if (seq === this.seq) this.renderSoon();
     });
     // 同時に6銘柄ずつ取得
@@ -2952,78 +2929,6 @@ const Scanner = {
     }
     $('scanZd').innerHTML = html + '</tbody></table>';
   },
-  /* ---------- RCIサインの成績（指定した日にエントリーしたサイン） ----------
-   * エントリー：L/Sが出た足の終値。決済：E、または反対のサイン（その足の終値で決済し、反対にエントリー）。
-   * 同じ向きのサインが続いたら最初のサインのまま（保有中の一覧と同じ）。決済が翌日以降でもその日の取引として数える。
-   * 損益：買いは（決済−エントリー）、売りは（エントリー−決済）から、今のスプレッドを1回分引く。まだ決済していないものは今の値で「未決済」 */
-  btDay:null,
-  jstDay(t){ const d = new Date((t - G.serverOffset + 9 * 3600) * 1000); return d.toISOString().slice(0, 10); },
-  btTrades(sym, tf){
-    const d = this.data[sym.key], bars = d && d[tf]; if (!bars || bars.length < 60) return null;
-    const def = INDICATORS.find(x=>x.id === 'rcipo'), p = Object.assign({}, indState.rcipo.p);
-    const S = gkSettings(), pk = JSON.stringify(p) + S.pivotMode + S.stPeriod + S.stMult + S.zoneCloseInv, tfBars = x=>d[x];
-    const ctx = {zoneDiv:(j, sd, pp)=>{
-      const k = sym.key + '|' + tf + '|' + bars[j].t + '|' + sd + '|' + pk;
-      if (!this.rciCache.has(k)){ const r = gkRciZoneDivEval(bars, tf, j, sd, pp, tfBars); this.rciCache.set(k, !!(r && r.ok)); }
-      return this.rciCache.get(k);
-    }};
-    let res; try{ res = def.compute(bars, p, TA, ctx); }catch(e){ return null; }
-    const trades = []; let pos = null;
-    const close = (i, why)=>{ pos.exitIdx = i; pos.exit = bars[i].c; pos.why = why; trades.push(pos); pos = null; };
-    for (const l of res.labels || []){
-      if (l.text === 'E'){ if (pos) close(l.index, 'E'); continue; }
-      const side = l.text === 'L' ? 1 : -1;
-      if (pos && pos.side === side) continue;
-      if (pos) close(l.index, '反対のサイン');
-      pos = {side, idx:l.index, t:bars[l.index].t, entry:bars[l.index].c};
-    }
-    if (pos){ pos.exit = bars[bars.length - 1].c; pos.open = true; trades.push(pos); }
-    // 判定できる最初の足（GKの判定に必要な本数）
-    return {trades, from:bars[Math.min(bars.length - 1, p.zf === '使わない' ? Math.max(+p.e3, +p.n) + 2 : GK_KEEP + 1)].t};
-  },
-  renderBacktest(){
-    const el = $('scanBt'); if (!el) return;
-    const open = store.get('scanBtOpen', true), tfs = this.rciTfs();
-    if (!this.btDay){ const y = new Date(Date.now() + 9 * 3600 * 1000 - 24 * 3600 * 1000); this.btDay = y.toISOString().slice(0, 10); }
-    let html = `<div class="st-head" data-fold="scanBtOpen"><span class="fold">${open ? '▼' : '▶'}</span>RCIサインの成績<span class="note">　その日（日本時間）にエントリーしたL/Sの結果。エントリー＝サインの足の終値、決済＝Eか反対のサインの足の終値。損益は今のスプレッドを1回分引いた値。対象：${tfs.join('・') || 'なし'}</span></div>`;
-    if (!open){ el.innerHTML = html; return; }
-    html += `<div class="bt-bar">日付 <input type="date" id="btDay" value="${this.btDay}"> <span class="note">行をタップすると取引の一覧を表示</span></div>`;
-    const rows = [];
-    for (const s of G.symbols) for (const tf of tfs){
-      const r = this.btTrades(s, tf); if (!r) continue;
-      const day = r.trades.filter(x=>this.jstDay(x.t) === this.btDay);
-      const dayStart = Date.parse(this.btDay + 'T00:00:00+09:00') / 1000 + G.serverOffset;   // その日の0時（日本時間）をサーバー時刻で
-      const partial = r.from > dayStart;
-      const pl = day.map(x=>this.rciPL(s, {side:x.side, entry:x.entry, price:x.exit}));
-      const closed = day.map((x, i)=>({x, pl:pl[i]})).filter(o=>!o.x.open);
-      const wins = closed.filter(o=>o.pl.v > 0).length, sum = closed.reduce((a, o)=>a + o.pl.v, 0);
-      const op = day.map((x, i)=>({x, pl:pl[i]})).filter(o=>o.x.open);
-      rows.push({s, tf, day, closed, wins, sum, op, unit:pl[0] ? pl[0].unit : (s.digits === 3 || s.digits === 5 ? 'pips' : 'pt'), partial, from:r.from});
-    }
-    const fmtV = (v, u)=>(v >= 0 ? '+' : '') + (u === 'pips' ? v.toFixed(1) : Math.round(v)) + u;
-    html += '<table><thead><tr><th>銘柄</th><th>時間足</th><th>取引</th><th>勝ち/負け</th><th>勝率</th><th>獲得</th><th>未決済</th></tr></thead><tbody>';
-    let tN = 0, tW = 0, tP = 0;
-    for (const r of rows){
-      const n = r.closed.length, rate = n ? Math.round(r.wins / n * 100) + '%' : '-';
-      if (r.unit === 'pips'){ tN += n; tW += r.wins; tP += r.sum; }
-      const opTxt = r.op.length ? r.op.map(o=>`${o.x.side === 1 ? '買' : '売'} ${fmtV(o.pl.v, o.pl.unit)}`).join('、') : '-';
-      const note = r.partial ? `<div class="note">※${fmtJst(r.from).split(' ')[1]}以降のみ（保存されている足の範囲）</div>` : '';
-      html += `<tr class="bt-row" data-key="${esc(r.s.key)}|${r.tf}"><th>${esc(r.s.name)}</th><td data-l="時間足">${gkTFText(TF_SEC[r.tf] / 60)}${note}</td>` +
-        `<td data-l="取引">${n}回</td><td data-l="勝ち/負け">${r.wins}勝 ${n - r.wins}敗</td><td data-l="勝率">${rate}</td>` +
-        `<td data-l="獲得"><b class="${r.sum >= 0 ? 'pl-p' : 'pl-m'}">${n ? fmtV(r.sum, r.unit) : '-'}</b></td><td data-l="未決済">${opTxt}</td></tr>`;
-      if (this.btOpenKey === r.s.key + '|' + r.tf && r.day.length){
-        html += `<tr class="bt-detail"><td colspan="7">` + r.day.map(x=>{
-          const v = this.rciPL(r.s, {side:x.side, entry:x.entry, price:x.exit});
-          return `<div>${x.side === 1 ? '<span class="up">買い（L）</span>' : '<span class="dn">売り（S）</span>'}　${fmtJst(x.t)} ${(+x.entry).toFixed(r.s.digits)} → ` +
-            (x.open ? `未決済（今 ${(+x.exit).toFixed(r.s.digits)}）` : `${fmtJst(this.data[r.s.key][r.tf][x.exitIdx].t)} ${(+x.exit).toFixed(r.s.digits)}（${x.why}）`) +
-            `　<b class="${v.v >= 0 ? 'pl-p' : 'pl-m'}">${fmtV(v.v, v.unit)}</b></div>`;
-        }).join('') + '</td></tr>';
-      }
-    }
-    html += '</tbody></table>';
-    if (tN) html += `<div class="bt-sum">pips の銘柄の合計：${tN}回　${tW}勝 ${tN - tW}敗　勝率 ${Math.round(tW / tN * 100)}%　獲得 <b class="${tP >= 0 ? 'pl-p' : 'pl-m'}">${fmtV(tP, 'pips')}</b>（未決済を除く）</div>`;
-    el.innerHTML = html;
-  },
   // RCIポジションを見る時間足：一覧で表示している時間足
   rciTfs(){ return INDICATORS.some(x=>x.id === 'rcipo') && indState.rcipo ? this.tfs.slice() : []; },
   // 時間足ごとに、チャートと同じ条件でL・S・Eを出し、最後に残っているポジション（Lのあと／Sのあと）を返す
@@ -3083,7 +2988,6 @@ const Scanner = {
     if (!this.on) return;
     this.renderSetups();
     this.renderRciPos();
-    this.renderBacktest();
     this.renderZoneDiv();
     let syms = G.symbols.slice();
     const hits = s => this.tfs.filter(tf=>((this.results[s.key] || {})[tf] || {}).contact).length;
@@ -3121,13 +3025,7 @@ function wireScan(){
   $('scanSort').onchange = ()=>{ Scanner.sortContact = $('scanSort').checked; Scanner.save(); Scanner.render(); };
   $('scanInt').onchange = ()=>{ Scanner.interval = +$('scanInt').value; Scanner.save(); Scanner.paintStatus(); Scanner.schedule(); };
   // 見出しをタップで折りたたみ
-  const fold = e=>{ const h = e.target.closest('.st-head[data-fold]'); if (!h) return false; store.set(h.dataset.fold, !store.get(h.dataset.fold, true)); Scanner.renderSetups(); Scanner.renderRciPos(); Scanner.renderBacktest(); Scanner.renderZoneDiv(); return true; };
-  $('scanBt').onclick = e=>{
-    if (fold(e)) return;
-    const tr = e.target.closest('tr.bt-row'); if (!tr) return;
-    Scanner.btOpenKey = Scanner.btOpenKey === tr.dataset.key ? null : tr.dataset.key; Scanner.renderBacktest();
-  };
-  $('scanBt').onchange = e=>{ if (e.target.id === 'btDay' && e.target.value){ Scanner.btDay = e.target.value; Scanner.btOpenKey = null; Scanner.renderBacktest(); } };
+  const fold = e=>{ const h = e.target.closest('.st-head[data-fold]'); if (!h) return false; store.set(h.dataset.fold, !store.get(h.dataset.fold, true)); Scanner.renderSetups(); Scanner.renderRciPos(); Scanner.renderZoneDiv(); return true; };
   $('scanRci').onclick = e=>{ if (fold(e)) return; const tr = e.target.closest('tr[data-sym]'); if (tr) Scanner.openChart(tr.dataset.sym, tr.dataset.tf); };
   $('scanSetup').onclick = e=>{ if (fold(e)) return; const tr = e.target.closest('tr[data-sym]'); if (tr) Scanner.openChart(tr.dataset.sym, 'M1'); };
   $('scanZd').onclick = e=>{
