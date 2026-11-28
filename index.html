@@ -537,46 +537,6 @@ const INDICATORS = [
     }
   },
 
-  {
-    // GK_ZONEに接触中 × 暫定ダイバージェンスのとき、SuperTrendの転換で確定 → L/S。SuperTrendが逆に転換したら E
-    // （GKのSH/SL判定方式とは別の、このサイン専用のSuperTrend）
-    id:'stzd', name:'SuperTrend×ZONE×Div（L/S/Eサイン）', pane:'main', defaultOn:true,
-    params:[
-      {key:'n',  label:'SuperTrend期間', value:20},
-      {key:'m',  label:'SuperTrend乗数', value:1},
-      {key:'zt', label:'ZONEの時間足', value:'現在足より上', options:['現在足より上','現在足以上']},
-      {key:'line', label:'SuperTrendライン', value:'表示', options:['表示','非表示']},
-    ],
-    // L：SuperTrendが上昇に転換した足で、① チャートより上の時間足の上昇ZONEに接触中 ② チャートの時間足で強気の「暫定」ダイバージェンス
-    //    （暫定のSLとその前のSL）。①②は転換した足が確定した時点で判定（転換した足を含めた暫定の安値で）
-    // S：下降に転換した足で、下降ZONE＋弱気の暫定ダイバージェンス（暫定のSHとその前のSH）
-    // E：L（S）のあと、SuperTrendが逆に転換した足。その足で反対のサインの条件も満たせば、続けてS（L）
-    compute(bars, p, TA, ctx){
-      const n = bars.length, st = gkSuperTrend(bars, Math.max(1, +p.n || 20), +p.m || 1), d = st.dirs;
-      const labels = []; let side = 0;
-      const pass = (j, sd)=>{
-        if (!ctx || !ctx.zoneDiv) return false;
-        const r = ctx.zoneDiv(j, sd, {zt:p.zt, provOnly:true});
-        if (r === null) ctx.pending = true;
-        return r === true;
-      };
-      for (let j = 1; j < n - 1; j++){          // 確定した足だけ（形成中の足では出さない）
-        if (d[j] == null || d[j-1] == null || d[j] === d[j-1]) continue;
-        if (side && d[j] !== side){ labels.push({index:j, position:side === 1 ? 'above' : 'below', color:'#fdd835', textColor:'#1a1a1a', text:'E'}); side = 0; }
-        if (pass(j, d[j])){
-          labels.push(d[j] === 1 ? {index:j, position:'below', color:'#26a69a', text:'L'} : {index:j, position:'above', color:'#ef5350', text:'S'});
-          side = d[j];
-        }
-      }
-      const lines = [];
-      if (p.line !== '非表示'){
-        lines.push({key:'up', name:'ST上昇', color:'rgba(0,255,255,.55)', values:st.line.map((v, i)=>d[i] === 1 ? v : null), width:'hair'});
-        lines.push({key:'dn', name:'ST下降', color:'rgba(255,82,82,.55)', values:st.line.map((v, i)=>d[i] === -1 ? v : null), width:'hair'});
-      }
-      return {labels, lines};
-    }
-  },
-
   // ↓↓↓ ここに自作インジケーターを追加 ↓↓↓
   // {
   //   id:'my1', name:'自作インジケーター', pane:'main', defaultOn:true,
@@ -634,7 +594,7 @@ function gkLaneDefaults(tf){
 const GK_DEFAULTS = {
   lanes:[gkLaneDefaults('CUR'), gkLaneDefaults('H1'), gkLaneDefaults('H4')],
   panel:true, watermark:true, toast:true, swingLabels:true, swingHistory:true, divLines:true, mtfDivPts:true, mtfDivTfs:{M5:true, M15:true, M30:true, H1:true, H4:true, D1:true}, setupMarks:true, dowSigns:true,
-  pivotMode:'zigzag', stPeriod:20, stMult:1, stLine:true, zoneCloseInv:false,   // SH/SLの判定方式（全時間足・全銘柄共通）
+  pivotMode:'zigzag', stPeriod:20, stMult:1, stLine:true, zoneCloseInv:false, sigOn:true, sigZt:'現在足より上',   // SH/SLの判定方式（全時間足・全銘柄共通）
 };
 let GKS = null;   // 設定（端末ごとに保存）
 function gkSettings(){
@@ -1653,6 +1613,27 @@ class GKPanel {
     return ok;
   }
 
+  /* ---- GKのサイン（SH/SLの判定方式がSuperTrendのとき）----
+   *  SuperTrend（GKの期間・乗数）が転換した足 j で：
+   *   ① チャートより上の時間足（設定で現在足以上）のGK_ZONEに接触中で、ZONEの向きが転換と同じ
+   *   ② その転換で確定する暫定ダイバージェンス（終わった区間の安値＝暫定SL とその前のSL。Sは高値＝暫定SH とその前のSH）
+   *  を満たせば L（上昇に転換）／S（下降に転換）。そのあと逆に転換した足で E。確定した足だけで判定 */
+  stSignals(){
+    const S = gkSettings(), bars = this.p.bars, n = bars.length; if (n < GK_KEEP + 3) return [];
+    const d = gkSuperTrendDirs(bars, Math.max(1, +S.stPeriod || 20), +S.stMult || 1);
+    const out = [], budget = performance.now() + 150, p = {zt:S.sigZt, provOnly:true};
+    let side = 0, pending = false;
+    for (let j = 1; j < n - 1; j++){
+      if (d[j] == null || d[j-1] == null || d[j] === d[j-1]) continue;
+      if (side && d[j] !== side){ out.push({li:j, text:'E', below:side === -1, color:'#fdd835', textColor:'#1a1a1a'}); side = 0; }
+      const r = this.rciZoneDivOk(j, d[j], p, budget);
+      if (r === null){ pending = true; continue; }
+      if (r){ out.push(d[j] === 1 ? {li:j, text:'L', below:true, color:'#26a69a'} : {li:j, text:'S', below:false, color:'#ef5350'}); side = d[j]; }
+    }
+    if (pending && !this.sigRetry) this.sigRetry = setTimeout(()=>{ this.sigRetry = null; this.refresh(); }, 400);   // データ待ち・計算の続き
+    return out;
+  }
+
   /* ---- 他の時間足（5m〜1D）の暫定ダイバージェンス：2点目の価格をチャートに表示するためのデータ ---- */
   // 受信する時間足：表示する暫定ダイバージェンスの時間足＋（1mチャートなら）セットアップ判定の1H・4H・5m・15m
   // GKの表示に使う時間足（GKがオフなら無し）
@@ -1668,8 +1649,8 @@ class GKPanel {
   // （SuperTrend×ZONE×Div のサインでも同じデータを使う）
   rciTfs(){
     if (!this.p.sym || typeof indState === 'undefined') return [];
-    const r = indState.rcipo, z = indState.stzd;
-    const need = (r && r.on && r.p.zf !== '使わない') || (z && z.on);
+    const r = indState.rcipo, S = gkSettings();
+    const need = (r && r.on && r.p.zf !== '使わない') || (this.on() && S.sigOn && S.pivotMode === 'st');
     if (!need) return [];
     const ci = TIMEFRAMES.indexOf(this.p.tf);
     return GKD_TFS.filter(tf=>TIMEFRAMES.indexOf(tf) > ci);
@@ -2038,6 +2019,8 @@ class GKPanel {
       m.mtfDiv.sort((a, b)=>b.sec - a.sec);
     }
     // セットアップの1mマーク（1mチャートのとき）。同じマークは1本にまとめ、理由を並べる
+    // サイン（SuperTrend方式のとき）：SuperTrendの転換で暫定ダイバージェンスが確定 → L/S、逆に転換 → E
+    m.sigs = (S.sigOn && S.pivotMode === 'st') ? this.stSignals() : [];
     m.setups = [];
     if (S.setupMarks && this.p.tf === 'M1'){
       if (!(S.divLines && S.mtfDivPts)) this.mtfCompute();
@@ -2295,6 +2278,27 @@ class GKPanel {
           ctx.fillStyle = 'rgba(15,17,21,.85)'; ctx.fillRect(rx - tw - 8, top, tw + 12, bh);
           ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(rx - tw - 8 + .5, top + .5, tw + 11, bh - 1);
           lines.forEach((t, i)=>{ ctx.font = `${i ? '' : 'bold '}${i ? fs - 1 : fs}px sans-serif`; ctx.fillStyle = i ? '#c9ced6' : col; ctx.fillText(t, rx, top + 2 + lh * (i + 1) - 3); });
+        }
+        ctx.restore();
+        ctx.font = `${small ? 10 : 12}px sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      }
+      if (m.sigs && m.sigs.length){
+        // サインのラベル：足の下（L・Sのあとの E）／上（S・Lのあとの E）に色付きの札。同じ足・同じ側は外側へ並べる
+        ctx.save(); const fs = small ? 10 : 11; ctx.font = `bold ${fs}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const stack = new Map(), bars = this.p.bars;
+        for (const q of m.sigs){
+          const x = X(q.li), b = bars[q.li]; if (x == null || !b || x < -20 || x > W + 20) continue;
+          const yb = Y(q.below ? b.l : b.h); if (yb == null) continue;
+          const sk = q.li + (q.below ? 'b' : 'a'), nth = stack.get(sk) || 0; stack.set(sk, nth + 1);
+          const w = ctx.measureText(q.text).width + 8, h = fs + 5, gap = 17 + nth * (h + 6), top = q.below ? yb + gap : yb - gap - h;
+          ctx.fillStyle = q.color; ctx.beginPath();
+          if (q.below){ ctx.moveTo(x, top - 4); ctx.lineTo(x - 4, top); ctx.lineTo(x + 4, top); } else { ctx.moveTo(x, top + h + 4); ctx.lineTo(x - 4, top + h); ctx.lineTo(x + 4, top + h); }
+          ctx.closePath(); ctx.fill();
+          const l = x - w / 2, r = 3;
+          ctx.beginPath(); ctx.moveTo(l + r, top); ctx.lineTo(l + w - r, top); ctx.quadraticCurveTo(l + w, top, l + w, top + r);
+          ctx.lineTo(l + w, top + h - r); ctx.quadraticCurveTo(l + w, top + h, l + w - r, top + h); ctx.lineTo(l + r, top + h);
+          ctx.quadraticCurveTo(l, top + h, l, top + h - r); ctx.lineTo(l, top + r); ctx.quadraticCurveTo(l, top, l + r, top); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = q.textColor || '#fff'; ctx.fillText(q.text, x, top + h / 2 + .5);
         }
         ctx.restore();
         ctx.font = `${small ? 10 : 12}px sans-serif`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
@@ -2591,6 +2595,18 @@ function gkBuildSettings(box, onChange){
   const zn = document.createElement('p'); zn.className = 'note'; zn.style.margin = '6px 0 0';
   zn.textContent = 'オフ（元のGK_ZONE）：足全体（ヒゲも含む）がZONEの外に出た確定足があれば無効。オン：それに加えて、確定足の終値がZONEの外側（上昇ZONEは下端より下、下降ZONEは上端より上）なら無効。形成中の足では無効にしません。';
   fz.append(rz, zn); wrap.appendChild(fz);
+  // サイン（SuperTrend方式のとき）
+  const fg = document.createElement('fieldset'); fg.innerHTML = '<legend>サイン（SuperTrendの転換×ZONE×暫定ダイバージェンス）</legend>';
+  const rg = document.createElement('div'); rg.className = 'gkrow';
+  const zsel = document.createElement('select');
+  for (const o of ['現在足より上', '現在足以上']){ const op = document.createElement('option'); op.textContent = o; zsel.appendChild(op); }
+  zsel.value = S.sigZt; zsel.onchange = ()=>{ S.sigZt = zsel.value; gkSave(); onChange(); };
+  const zl = document.createElement('label'); zl.append('ZONEの時間足 ', zsel);
+  rg.append(chk(S, 'sigOn', 'サインを表示'), zl);
+  const gn = document.createElement('p'); gn.className = 'note'; gn.style.margin = '6px 0 0';
+  gn.textContent = (S.pivotMode === 'st' ? '' : '※SH/SLの判定方式を「SuperTrend」にすると使えます。　') +
+    'L：SuperTrendが上昇に転換した足で、① チャートより上の時間足の上昇ZONEに接触中 ② その転換で確定する強気の暫定ダイバージェンス（終わった下降区間の安値＝暫定SL とその前のSL）。S は上下逆。E：そのあとSuperTrendが逆に転換した足。確定した足だけで判定します。';
+  fg.append(rg, gn); wrap.appendChild(fg);
   // VPSの通知（Discord）との連動
   const fy = document.createElement('fieldset'); fy.innerHTML = '<legend>Discord通知との連動</legend>';
   const yn = document.createElement('p'); yn.className = 'note'; yn.id = 'gkSyncState'; yn.style.margin = '0'; yn.style.userSelect = 'all';
