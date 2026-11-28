@@ -3009,14 +3009,17 @@ const Scanner = {
     }
     const fmtV = (v, u)=>(v > 0 ? '+' : '') + (u === 'pips' ? v.toFixed(1) : Math.round(v)) + u;
     html += '<table><thead><tr><th>銘柄</th><th>時間足</th><th>取引</th><th>勝ち/負け</th><th>勝率</th><th>獲得</th><th>未決済</th></tr></thead><tbody>';
-    let tN = 0, tW = 0, tP = 0;
+    let tN = 0, tW = 0, tP = 0, aN = 0, aW = 0, aD = 0;
+    const perSym = new Map();   // pt の銘柄：単位が銘柄ごとに違うので、銘柄ごとに合計
     for (const r of rows){
       const n = r.closed.length, rate = n ? Math.round(r.wins / n * 100) + '%' : '-';
+      aN += n; aW += r.wins; aD += r.closed.filter(o=>o.pl.v === 0).length;
       if (r.unit === 'pips'){ tN += n; tW += r.wins; tP = Math.round((tP + r.sum) * 10) / 10; }
+      else if (n){ const q = perSym.get(r.s.name) || {n:0, v:0}; q.n += n; q.v += r.sum; perSym.set(r.s.name, q); }
       const opTxt = r.op.length ? r.op.map(o=>`${o.x.side === 1 ? '買' : '売'} ${fmtV(o.pl.v, o.pl.unit)}`).join('、') : '-';
       const note = r.partial ? `<div class="note">※${fmtJst(r.from).split(' ')[1]}以降のみ（保存されている足の範囲）</div>` : '';
       html += `<tr class="bt-row" data-key="${esc(r.s.key)}|${r.tf}"><th>${esc(r.s.name)}</th><td data-l="時間足">${gkTFText(TF_SEC[r.tf] / 60)}${note}</td>` +
-        `<td data-l="取引">${n}回</td><td data-l="勝ち/負け">${r.wins}勝 ${n - r.wins}敗</td><td data-l="勝率">${rate}</td>` +
+        `<td data-l="取引">${n}回</td><td data-l="勝ち/負け">${r.wins}勝 ${n - r.wins - r.closed.filter(o=>o.pl.v === 0).length}敗${r.closed.some(o=>o.pl.v === 0) ? ` ±0 ${r.closed.filter(o=>o.pl.v === 0).length}` : ''}</td><td data-l="勝率">${rate}</td>` +
         `<td data-l="獲得"><b class="${r.sum >= 0 ? 'pl-p' : 'pl-m'}">${n ? fmtV(r.sum, r.unit) : '-'}</b></td><td data-l="未決済">${opTxt}</td></tr>`;
       if (this.btOpenKey === r.s.key + '|' + r.tf && r.day.length){
         html += `<tr class="bt-detail"><td colspan="7">` + r.day.map(x=>{
@@ -3028,7 +3031,12 @@ const Scanner = {
       }
     }
     html += '</tbody></table>';
-    if (tN) html += `<div class="bt-sum">pips の銘柄の合計：${tN}回　${tW}勝 ${tN - tW}敗　勝率 ${Math.round(tW / tN * 100)}%　獲得 <b class="${tP >= 0 ? 'pl-p' : 'pl-m'}">${fmtV(tP, 'pips')}</b>（未決済を除く）</div>`;
+    // 合計：回数・勝敗・勝率は全銘柄。獲得は単位ごと（pipsの銘柄はまとめて、ptの銘柄は銘柄ごと）。未決済を除く
+    const bv = (v, u)=>`<b class="${v >= 0 ? 'pl-p' : 'pl-m'}">${fmtV(v, u)}</b>`;
+    let sum = `<div class="bt-sum"><b>全銘柄の合計</b>：${aN}回　${aW}勝 ${aN - aW - aD}敗${aD ? `（±0が${aD}回）` : ''}　勝率 ${aN ? Math.round(aW / aN * 100) + '%' : '-'}（未決済を除く）</div>`;
+    sum += `<div class="bt-sum">獲得（pipsの銘柄${tN ? `・${tN}回` : ''}）：${tN ? bv(tP, 'pips') : '-'}</div>`;
+    if (perSym.size) sum += `<div class="bt-sum">獲得（ptの銘柄は単位が違うため銘柄ごと）：` + [...perSym].map(([nm, q])=>`${esc(nm)} ${bv(q.v, 'pt')}（${q.n}回）`).join('、') + '</div>';
+    html += sum;
     el.innerHTML = html;
   },
   // RCIポジションを見る時間足：一覧で表示している時間足
