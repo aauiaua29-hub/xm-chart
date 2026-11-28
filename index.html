@@ -537,6 +537,46 @@ const INDICATORS = [
     }
   },
 
+  {
+    // GK_ZONEに接触中 × 暫定ダイバージェンスのとき、SuperTrendの転換で確定 → L/S。SuperTrendが逆に転換したら E
+    // （GKのSH/SL判定方式とは別の、このサイン専用のSuperTrend）
+    id:'stzd', name:'SuperTrend×ZONE×Div（L/S/Eサイン）', pane:'main', defaultOn:true,
+    params:[
+      {key:'n',  label:'SuperTrend期間', value:20},
+      {key:'m',  label:'SuperTrend乗数', value:1},
+      {key:'zt', label:'ZONEの時間足', value:'現在足より上', options:['現在足より上','現在足以上']},
+      {key:'line', label:'SuperTrendライン', value:'表示', options:['表示','非表示']},
+    ],
+    // L：SuperTrendが上昇に転換した足で、① チャートより上の時間足の上昇ZONEに接触中 ② チャートの時間足で強気の「暫定」ダイバージェンス
+    //    （暫定のSLとその前のSL）。①②は転換した足が確定した時点で判定（転換した足を含めた暫定の安値で）
+    // S：下降に転換した足で、下降ZONE＋弱気の暫定ダイバージェンス（暫定のSHとその前のSH）
+    // E：L（S）のあと、SuperTrendが逆に転換した足。その足で反対のサインの条件も満たせば、続けてS（L）
+    compute(bars, p, TA, ctx){
+      const n = bars.length, st = gkSuperTrend(bars, Math.max(1, +p.n || 20), +p.m || 1), d = st.dirs;
+      const labels = []; let side = 0;
+      const pass = (j, sd)=>{
+        if (!ctx || !ctx.zoneDiv) return false;
+        const r = ctx.zoneDiv(j, sd, {zt:p.zt, provOnly:true});
+        if (r === null) ctx.pending = true;
+        return r === true;
+      };
+      for (let j = 1; j < n - 1; j++){          // 確定した足だけ（形成中の足では出さない）
+        if (d[j] == null || d[j-1] == null || d[j] === d[j-1]) continue;
+        if (side && d[j] !== side){ labels.push({index:j, position:side === 1 ? 'above' : 'below', color:'#fdd835', textColor:'#1a1a1a', text:'E'}); side = 0; }
+        if (pass(j, d[j])){
+          labels.push(d[j] === 1 ? {index:j, position:'below', color:'#26a69a', text:'L'} : {index:j, position:'above', color:'#ef5350', text:'S'});
+          side = d[j];
+        }
+      }
+      const lines = [];
+      if (p.line !== '非表示'){
+        lines.push({key:'up', name:'ST上昇', color:'rgba(0,255,255,.55)', values:st.line.map((v, i)=>d[i] === 1 ? v : null), width:'hair'});
+        lines.push({key:'dn', name:'ST下降', color:'rgba(255,82,82,.55)', values:st.line.map((v, i)=>d[i] === -1 ? v : null), width:'hair'});
+      }
+      return {labels, lines};
+    }
+  },
+
   // ↓↓↓ ここに自作インジケーターを追加 ↓↓↓
   // {
   //   id:'my1', name:'自作インジケーター', pane:'main', defaultOn:true,
@@ -1604,7 +1644,7 @@ class GKPanel {
     if (!this.rciCache) this.rciCache = new Map();
     const tfs = this.rciTfs(), loaded = tfs.filter(tf=>this.mtfData[tf]);
     if (loaded.length < tfs.length) return null;
-    const key = b.t + ':' + side + ':' + p.zt + ':' + loaded.join(',') + ':' + gkSettings().pivotMode + gkSettings().zoneCloseInv;
+    const key = b.t + ':' + side + ':' + p.zt + ':' + (p.provOnly ? 'P' : '') + ':' + loaded.join(',') + ':' + gkSettings().pivotMode + gkSettings().zoneCloseInv;
     if (this.rciCache.has(key)) return this.rciCache.get(key);
     if (budget && performance.now() > budget) return null;
     const r = gkRciZoneDivEval(bars, this.p.tf, j, side, p, tf=>this.mtfData[tf]);
@@ -1625,11 +1665,14 @@ class GKPanel {
     return [...set];
   }
   // RCI×パーフェクトオーダーの「ZONE・Div条件」に使う、チャートより上の時間足（GKの表示がオフでも読む）
+  // （SuperTrend×ZONE×Div のサインでも同じデータを使う）
   rciTfs(){
-    const st = typeof indState !== 'undefined' && indState.rcipo;
-    if (!this.p.sym || !st || !st.on || st.p.zf === '使わない') return [];
+    if (!this.p.sym || typeof indState === 'undefined') return [];
+    const r = indState.rcipo, z = indState.stzd;
+    const need = (r && r.on && r.p.zf !== '使わない') || (z && z.on);
+    if (!need) return [];
     const ci = TIMEFRAMES.indexOf(this.p.tf);
-    return GKD_TFS.filter(tf=>TIMEFRAMES.indexOf(tf) > ci || (st.p.zt === '現在足以上' && tf === this.p.tf)).filter(tf=>tf !== this.p.tf);
+    return GKD_TFS.filter(tf=>TIMEFRAMES.indexOf(tf) > ci);
   }
   mtfTfs(){ return [...new Set(this.mtfTfsGk().concat(this.rciTfs()))]; }
   mtfWanted(){ return this.mtfTfsGk().length > 0; }
@@ -2353,6 +2396,12 @@ function gkLatestDivs(lane, bull){
   const typ = bull ? -1 : 1, prov = (lane.provExt || []).some(x=>x.type === typ);
   return (prov ? (lane.divP || []) : (lane.div || [])).filter(d=>d.bull === bull);
 }
+function gkProvDivs(lane, bull){
+  if (!lane || !lane.ready) return [];
+  const typ = bull ? -1 : 1;
+  if (!(lane.provExt || []).some(x=>x.type === typ)) return [];
+  return (lane.divP || []).filter(d=>d.bull === bull);
+}
 function gkDivExceeded(bars, d){
   if (!bars || !bars.length) return false;
   for (let i = bars.length - 1; i >= 0 && bars[i].t > d.t2; i--)
@@ -2422,7 +2471,8 @@ function gkRciZoneDivEval(bars, tf, j, side, p, tfBars){
   }
   if (!zones.length) return {ok:false, zones, divs:[]};
   const e = gkLaneCompute(bars.slice(Math.max(0, j + 1 - GK_FETCH), j + 1), tf);
-  const divs = gkLatestDivs(e, side === 1);
+  // p.provOnly：暫定のダイバージェンスだけ（暫定のSL／SHがあり、それとその前を比べて出ているもの）
+  const divs = p.provOnly ? gkProvDivs(e, side === 1) : gkLatestDivs(e, side === 1);
   return {ok:divs.length > 0, zones, divs};
 }
 
